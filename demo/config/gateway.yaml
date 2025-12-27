@@ -1,0 +1,64 @@
+# Tenuo Authorizer Gateway Configuration
+# Used by the Docker demo to expose tools for verification
+
+version: "1"
+
+settings:
+  debug_mode: true
+  # Header containing the warrant (auto-detects single vs chain/WarrantStack)
+  warrant_header: "X-Tenuo-Warrant"
+  # Header containing PoP signature (base64-encoded)
+  pop_header: "X-Tenuo-PoP"
+  # Allow for clock drift in PoP verification
+  clock_tolerance_secs: 30
+
+# Tool definitions (required by GatewayConfig)
+tools:
+  manage_infrastructure:
+    description: "Manage cluster infrastructure (upgrade, restart, scale)"
+    constraints: {}
+  read_file:
+    description: "Read files from the filesystem"
+    constraints: {}
+
+
+# Map routes to tools for the demo
+# We use explicit routes for clarity and security (avoiding loose wildcards)
+routes:
+  # 1. Manage Infrastructure (upgrade/restart clusters)
+  #    Path: /verify/manage_infrastructure
+  #    Method: POST
+  - pattern: "/verify/manage_infrastructure"
+    methods: ["POST"]
+    tool: "manage_infrastructure"
+    constraints:
+      # Extract arguments from JSON body
+      cluster:
+        from: "body"
+        path: "cluster"
+        required: true
+      action:
+        from: "body"
+        path: "action"
+        required: true
+      replicas:
+        from: "body"
+        path: "replicas"
+        type: "integer"
+        required: true
+
+  # 2. Read File (for file access tests if applicable)
+  #    Path: /verify/read_file
+  - pattern: "/verify/read_file"
+    methods: ["POST"]
+    tool: "read_file"
+    constraints:
+      path:
+        from: "body"
+        path: "path"
+      priority:
+        from: "body"
+        path: "priority"
+        type: "integer"
+
+

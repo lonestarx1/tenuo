@@ -1,0 +1,19 @@
+# Rust build artifacts (can be 10GB+)
+target/
+
+# Git
+.git/
+
+# IDE
+.idea/
+.vscode/
+
+# OS files
+.DS_Store
+
+# Logs
+*.log
+
+# Demo output
+demo/output/
+
