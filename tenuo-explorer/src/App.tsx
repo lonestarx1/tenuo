@@ -687,8 +687,8 @@ const CodeGenerator = ({ decoded, tool, args }: { decoded: DecodedWarrant | null
       }
 
       // UrlPattern constraint: { url_pattern: "https://*.example.com/*" }
-      if ((v.url_pattern || v.urlPattern) && typeof (v.url_pattern || v.urlPattern) === 'string') {
-        const urlPattern = (v.url_pattern || v.urlPattern) as string;
+      if ((v.url_pattern || v.urlPattern || v.urlpattern) && typeof (v.url_pattern || v.urlPattern || v.urlpattern) === 'string') {
+        const urlPattern = (v.url_pattern || v.urlPattern || v.urlpattern) as string;
         return {
           type: 'url_pattern',
           pythonCode: `UrlPattern("${urlPattern}")`,
