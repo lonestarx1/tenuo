@@ -29,6 +29,7 @@ pip install tenuo
 <a href="https://colab.research.google.com/github/tenuo-ai/tenuo/blob/main/notebooks/tenuo_demo.ipynb"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"></a>
 <a href="https://tenuo.dev/explorer/"><img src="https://img.shields.io/badge/🔬_Explorer-decode_warrants-00d4ff" alt="Explorer"></a>
 <a href="https://tenuo.dev/demo.html"><img src="https://img.shields.io/badge/🐳_Docker_Demo-delegation_chain-a855f7" alt="Docker Demo"></a>
+<a href="https://niyikiza.com/posts/tenuo-launch/"><img src="https://img.shields.io/badge/📖_Blog-Why_Tenuo%3F-ff6b6b" alt="Blog"></a>
 
 ## Quick Start
 

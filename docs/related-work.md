@@ -97,6 +97,25 @@ A complete defense may use both:
 
 ---
 
+## Authority Separation
+
+**Paper**: [Authority Separation in AI Systems](https://github.com/Anima-Core/authority-separation-suite) (Shamim, 2025)
+
+This paper provides empirical validation of the architectural pattern Tenuo implements. Key findings across 1,000 adversarial test cases:
+
+| Metric | Authority Separation | Baseline (Prompt-Governed) |
+|--------|---------------------|---------------------------|
+| Unauthorized tool invocations | **0%** | 23% |
+| Unsupported factual claims | **0%** | 12% |
+| Unnecessary execution cost | **-78%** | baseline |
+| Catastrophic action recurrence | **0** | 4.3 mean repetitions |
+
+**Core thesis**: Prompt injection, hallucination, and repeated failures are manifestations of a single architectural flaw—coupling generation with execution authority. Separating these concerns provides structural guarantees that persist under adversarial conditions.
+
+Tenuo implements this separation: models propose actions, the authorizer enforces constraints.
+
+---
+
 ## Prior Art
 
 Tenuo builds on established capability-based authorization patterns:
