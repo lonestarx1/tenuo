@@ -254,11 +254,11 @@ See [Related Work](https://tenuo.dev/related-work) for detailed comparison.
 
 | Feature | Status |
 |---------|--------|
-| Revocation service | Basic revocation via Authorizer; distributed revocation in v0.3 |
-| Context-aware constraints | Spec under development |
-| Multi-sig approvals | Planned for v0.3 |
-| Google A2A integration | Planned for v0.2 |
 | TypeScript/Node SDK | Planned for v0.2 |
+| Google A2A integration | Planned for v0.2 |
+| Context-aware constraints | Spec under development |
+| Revocation service | Basic revocation via Authorizer; distributed revocation in v0.3 |
+| Multi-sig approvals | Planned for v0.3 |
 
 ---
 
