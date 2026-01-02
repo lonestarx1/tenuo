@@ -5,7 +5,7 @@
 [![PyPI](https://img.shields.io/pypi/v/tenuo.svg)](https://pypi.org/project/tenuo/)
 [![Python Versions](https://img.shields.io/pypi/pyversions/tenuo.svg)](https://pypi.org/project/tenuo/)
 
-> **Status: v0.1 Beta** — Rust core frozen. See [CHANGELOG](../CHANGELOG.md).
+> **Status: v0.1 Beta** — Core semantics are stable. See [CHANGELOG](../CHANGELOG.md).
 
 Python bindings for [Tenuo](https://github.com/tenuo-ai/tenuo), providing cryptographically-enforced capability attenuation for AI agent workflows.
 

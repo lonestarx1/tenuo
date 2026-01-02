@@ -20,7 +20,7 @@ Tenuo is a cryptographic authorization primitive for AI agents. **Think prepaid 
 It constrains ambient identity-based permissions with task-scoped capabilities that attenuate as they delegate. Offline verification in ~27μs.
 If an agent is prompt-injected, the authority still can't escape its bounds.
 
-> **Status: v0.1 Beta** — Rust core is frozen. SDKs and integrations may evolve. See [CHANGELOG](./CHANGELOG.md).
+> **Status: v0.1 Beta** — Core semantics are stable. APIs may evolve. See [CHANGELOG](./CHANGELOG.md).
 
 ```bash
 pip install tenuo
