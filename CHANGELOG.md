@@ -31,15 +31,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Local LLM Demo**: Prompt injection defense with local LLMs
 - **Trust Cliff Demo**: Interactive demonstration of zero-trust behavior
 
-### Changed
-
-- CI now tests Python 3.9-3.14 across Linux (x86_64, ARM64), macOS (ARM64), and Windows (x86_64)
-
-### Fixed
-
-- URL domain checking now uses proper `urlparse` instead of substring matching (security fix)
-- Fixed `Any` vs `AnyOf` naming conflict in documentation
-
 ---
 
 ## [0.1.0-beta.1] - 2025-12-27
