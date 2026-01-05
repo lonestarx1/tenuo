@@ -204,8 +204,8 @@ This runs the [orchestrator → worker → authorizer demo](https://tenuo.dev/de
 **Official Images** on [Docker Hub](https://hub.docker.com/u/tenuo):
 
 ```bash
-docker pull tenuo/authorizer:0.1.0-beta.1  # Sidecar for warrant verification
-docker pull tenuo/control:0.1.0-beta.1     # Control plane (demo/reference)
+docker pull tenuo/authorizer:0.1.0-beta.4  # Sidecar for warrant verification
+docker pull tenuo/control:0.1.0-beta.4     # Control plane (demo/reference)
 ```
 
 **Helm Chart**:
@@ -255,11 +255,11 @@ See [Related Work](https://tenuo.dev/related-work) for detailed comparison.
 
 | Feature | Status |
 |---------|--------|
+| Multi-sig approvals | Available in v0.1.0-beta.3 |
 | TypeScript/Node SDK | Planned for v0.2 |
 | Google A2A integration | Planned for v0.2 |
 | Context-aware constraints | Spec under development |
 | Revocation service | Basic revocation via Authorizer; distributed revocation in v0.3 |
-| Multi-sig approvals | Planned for v0.3 |
 
 ---
 
@@ -269,7 +269,7 @@ Building a sidecar or gateway? Use the core directly:
 
 ```toml
 [dependencies]
-tenuo = "0.1.0-beta.1"
+tenuo = "0.1.0-beta.4"
 ```
 
 See [docs.rs/tenuo](https://docs.rs/tenuo) for Rust API.

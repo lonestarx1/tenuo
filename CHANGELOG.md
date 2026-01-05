@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.0-beta.4] - 2026-01-05
+
+### Added
+
+#### Cryptographic Benchmark Suite
+- **37 security tests** validating forgery resistance, delegation monotonicity, key separation, multi-sig enforcement, and temporal constraints
+- Comprehensive report generation with `python -m benchmarks.cryptographic.report`
+
+#### AgentDojo Integration
+- Full prompt injection benchmark with Tenuo constraint enforcement
+- **CEL constraints** for list validation (`value.all(r, r.endsWith('@company.com'))`)
+- **JIT warrant mode** (`--jit`) for task-specific constraint policies
+- Task-aware policy selection via `task_policies.py`
+
+#### Enhanced Diagnostics
+- `check_constraints_detailed()` returns structured `(field, reason)` tuples
+- Robust field extraction in `why_denied()` (no more regex parsing)
+
+### Security
+
+- **Issuer trust verification**: `Authorizer` now verifies warrant issuer is in `trusted_roots` before any other checks
+- **Path injection hardening**: FastAPI example uses `os.path.normpath` with traversal check
+- **Workflow permissions**: Explicit `permissions:` blocks in GitHub Actions workflows
+- **Log redaction**: Key material redacted from demo binary logs
+
+### Improved
+
+- CEL feature now enabled by default in Python SDK
+- Better exception handling with `FeatureNotEnabled` error type
+- Featured in [Awesome Object Capabilities](https://github.com/dckc/awesome-ocap)
+
+---
+
 ## [0.1.0-beta.3] - 2026-01-03
 
 ### Added
