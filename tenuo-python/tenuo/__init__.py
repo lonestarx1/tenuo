@@ -104,6 +104,7 @@ from .exceptions import (
     MonotonicityError,
     ConfigurationError,
     AuthorizationDenied,  # Rich error with diff support
+    ScopeViolation,  # Authorization scope exceeded
 )
 
 # Error explanation
@@ -195,6 +196,7 @@ __all__ = [
     "MonotonicityError",
     "ConfigurationError",
     "AuthorizationDenied",  # Rich error with diff support
+    "ScopeViolation",  # Authorization scope exceeded
 
     # Error explanation
     "explain",

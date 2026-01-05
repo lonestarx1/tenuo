@@ -21,6 +21,7 @@ Run with: uvicorn fastapi_integration:app --reload
 
 import os
 import logging
+from pathlib import Path
 
 from fastapi import FastAPI, Request, HTTPException, Depends
 from fastapi.responses import JSONResponse
@@ -134,19 +135,46 @@ async def get_warrant(request: Request) -> Warrant:
 # Protected Tool Functions
 # ============================================================================
 
+FILE_ROOT = Path("/tmp/tenuo_fastapi_demo").resolve()
+
+
+def _resolve_under_root(user_path: str) -> Path:
+    """
+    Resolve a user-provided relative path under FILE_ROOT.
+
+    This provides defense in depth for the FastAPI example and avoids
+    directory traversal (even if the process working directory changes).
+    """
+    p = Path(user_path)
+    if p.is_absolute():
+        raise HTTPException(status_code=403, detail="Invalid path")
+
+    full = (FILE_ROOT / p).resolve()
+    try:
+        full.relative_to(FILE_ROOT)
+    except ValueError:
+        raise HTTPException(status_code=403, detail="Invalid path")
+
+    return full
+
+
 @guard(tool="read_file")
 def read_file(file_path: str) -> str:
     """
     Protected file reading function.
     Only authorized paths (per warrant constraints) are allowed.
+
+    Security: Path is validated by Tenuo constraints AND sanitized here.
     """
+    full_path = _resolve_under_root(file_path)
+
     try:
-        with open(file_path, 'r') as f:
+        with open(full_path, "r") as f:
             return f.read()
     except FileNotFoundError:
-        raise HTTPException(status_code=404, detail=f"File not found: {file_path}")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error reading file: {str(e)}")
+        raise HTTPException(status_code=404, detail="File not found")
+    except Exception:
+        raise HTTPException(status_code=500, detail="Error reading file")
 
 
 @guard(tool="write_file")
@@ -154,12 +182,18 @@ def write_file(file_path: str, content: str) -> None:
     """
     Protected file writing function.
     Only authorized paths (per warrant constraints) are allowed.
+
+    Security: Path is validated by Tenuo constraints AND sanitized here.
     """
+    full_path = _resolve_under_root(file_path)
+
     try:
-        with open(file_path, 'w') as f:
+        # Ensure root exists for this example
+        full_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(full_path, "w") as f:
             f.write(content)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error writing file: {str(e)}")
+    except Exception:
+        raise HTTPException(status_code=500, detail="Error writing file")
 
 
 @guard(tool="manage_cluster")

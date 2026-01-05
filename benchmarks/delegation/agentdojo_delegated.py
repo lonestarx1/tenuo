@@ -9,11 +9,14 @@ Runs AgentDojo's full benchmark but with a delegated warrant chain:
 This demonstrates Tenuo's core value: delegation bounds damage.
 """
 
+import logging
 from typing import Optional, Sequence
 from pathlib import Path
 from dataclasses import dataclass, field
 
 from openai import OpenAI
+
+logger = logging.getLogger(__name__)
 from agentdojo.benchmark import get_suite, benchmark_suite_with_injections
 from agentdojo.agent_pipeline import (
     BasePipelineElement, AgentPipeline, OpenAILLM,
@@ -84,7 +87,7 @@ class DelegatedPipeline(BasePipelineElement):
             # No narrowing defined - just delegate with same constraints
             # (still demonstrates delegation chain even without attenuation)
             return (
-                manager_warrant.attenuate_builder()
+                manager_warrant.grant_builder()
                 .inherit_all()
                 .holder(self.assistant_key.public_key)
                 .ttl(1800)
@@ -92,7 +95,7 @@ class DelegatedPipeline(BasePipelineElement):
             )
         
         # Build attenuated warrant with narrowed constraints
-        builder = manager_warrant.attenuate_builder()
+        builder = manager_warrant.grant_builder()
         builder.inherit_all()
         
         for tool_name, constraints in narrowing.items():
@@ -299,7 +302,7 @@ class DelegationBenchmark:
                 injection_tasks=injection_tasks,
             )
         
-        print(f"[{role}] Allowed: {metrics.allowed}, Blocked: {metrics.denied}")
+        logger.info("[%s] Allowed: %d, Blocked: %d", role, metrics.allowed, metrics.denied)
         return metrics
 
 

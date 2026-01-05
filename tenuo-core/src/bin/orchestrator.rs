@@ -21,7 +21,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("║          Demonstrating Capability Delegation in Tenuo            ║");
     println!("╚══════════════════════════════════════════════════════════════════╝\n");
 
-    // Generate a session ID for this workflow (for traceability)
+    // Generate a session ID for this workflow (for traceability).
+    // Session IDs are not secrets. Printing them helps correlate logs.
     let session_id = format!("sess_{}", Uuid::now_v7().simple());
     println!("  Session ID: {}\n", session_id);
 

@@ -2345,7 +2345,8 @@ impl PyWarrant {
 
     /// Issue a new warrant.
     #[staticmethod]
-    #[pyo3(signature = (keypair, capabilities=None, ttl_seconds=3600, holder=None, session_id=None, clearance=None))]
+    #[pyo3(signature = (keypair, capabilities=None, ttl_seconds=3600, holder=None, session_id=None, clearance=None, required_approvers=None, min_approvals=None))]
+    #[allow(clippy::too_many_arguments)]
     fn issue(
         keypair: &PySigningKey,
         capabilities: Option<&Bound<'_, PyDict>>,
@@ -2353,6 +2354,8 @@ impl PyWarrant {
         holder: Option<&PyPublicKey>,
         session_id: Option<&str>,
         clearance: Option<&PyClearance>,
+        required_approvers: Option<Vec<PyPublicKey>>,
+        min_approvals: Option<u32>,
     ) -> PyResult<Self> {
         let mut builder = RustWarrant::builder().ttl(Duration::from_secs(ttl_seconds));
 
@@ -2385,6 +2388,18 @@ impl PyWarrant {
 
         if let Some(sid) = session_id {
             builder = builder.session_id(sid);
+        }
+
+        // Multi-sig: set required approvers if provided
+        if let Some(approvers) = required_approvers {
+            let rust_approvers: Vec<crate::crypto::PublicKey> =
+                approvers.into_iter().map(|pk| pk.inner).collect();
+            builder = builder.required_approvers(rust_approvers);
+        }
+
+        // Multi-sig: set minimum approvals if provided
+        if let Some(min) = min_approvals {
+            builder = builder.min_approvals(min);
         }
 
         let warrant = builder.build(&keypair.inner).map_err(to_py_err)?;
@@ -2788,6 +2803,33 @@ impl PyWarrant {
                 format!("Constraint '{}' not satisfied: {}", field, reason),
             )),
             Err(e) => Ok(Some(format!("{}", e))),
+        }
+    }
+
+    /// Check constraints with structured result (DIAGNOSTIC USE ONLY).
+    ///
+    /// Like check_constraints, but returns structured data instead of a string.
+    ///
+    /// Returns:
+    ///     None if constraints are satisfied, or a tuple (field, reason) on failure
+    fn check_constraints_detailed(
+        &self,
+        tool: &str,
+        args: &Bound<'_, PyDict>,
+    ) -> PyResult<Option<(String, String)>> {
+        let mut rust_args = HashMap::new();
+        for (key, value) in args.iter() {
+            let field: String = key.extract()?;
+            let cv = py_to_constraint_value(&value)?;
+            rust_args.insert(field, cv);
+        }
+
+        match self.inner.check_constraints(tool, &rust_args) {
+            Ok(()) => Ok(None),
+            Err(crate::error::Error::ConstraintNotSatisfied { field, reason }) => {
+                Ok(Some((field, reason)))
+            }
+            Err(e) => Ok(Some(("_error".to_string(), format!("{}", e)))),
         }
     }
 
