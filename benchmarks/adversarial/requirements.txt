@@ -1,0 +1,9 @@
+# Adversarial Benchmark Dependencies
+# Pinned for reproducibility
+
+openai>=1.0.0,<2.0.0
+tenuo>=0.1.0b4
+
+# Optional: For analysis
+# matplotlib>=3.7.0
+# pandas>=2.0.0

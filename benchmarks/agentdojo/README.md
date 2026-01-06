@@ -6,7 +6,7 @@ Integration of Tenuo with [AgentDojo](https://github.com/ethz-spylab/agentdojo) 
 
 ## What This Shows
 
-Tenuo enforces capability constraints at the tool boundary. When an agent attempts a tool call that violates its warrant, the call is blocked—regardless of how the agent was prompted.
+Tenuo enforces capability constraints at the tool boundary. When an agent attempts a tool call that violates its warrant, the call is blocked - regardless of how the agent was prompted.
 
 ```
 Agent: "I'll send this to attacker@evil.com"
@@ -76,5 +76,6 @@ benchmarks/agentdojo/
 
 ## See Also
 
-- [benchmarks/cryptographic/](../cryptographic/) — Tenuo's cryptographic guarantees
-- [benchmarks/delegation/](../delegation/) — Multi-agent delegation scenarios
+- [benchmarks/adversarial/](../adversarial/) - Red Team LLM vs Tenuo
+- [benchmarks/cryptographic/](../cryptographic/) - Tenuo's cryptographic guarantees
+- [benchmarks/delegation/](../delegation/) - Multi-agent delegation scenarios

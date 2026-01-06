@@ -64,6 +64,7 @@ tenuo-core/check.log
 results/
 **/results/
 benchmarks/**/results/
+benchmarks/**/REPORT.md
 security_report.md
 *.log
 tenuo-core/benchmark_results.txt

@@ -56,17 +56,25 @@ Same agent, different outcomes based on warrant:
 agent = create_agent()
 
 # Task 1: Internal email warrant
-internal_warrant = Warrant.mint_builder()
+internal_warrant = (
+    Warrant.mint_builder()
     .capability("send_email", {"to": Pattern("*@company.com")})
+    .holder(agent_key.public_key)
+    .ttl(300)
     .mint(issuer_key)
+)
 agent.run(warrant=internal_warrant)
 # team@company.com -> Allowed
 # attacker@evil.com -> Blocked
 
 # Task 2: External email warrant  
-external_warrant = Warrant.mint_builder()
+external_warrant = (
+    Warrant.mint_builder()
     .capability("send_email", {"to": Pattern("*")})
+    .holder(agent_key.public_key)
+    .ttl(300)
     .mint(issuer_key)
+)
 agent.run(warrant=external_warrant)
 # partner@external.com -> Allowed
 ```
