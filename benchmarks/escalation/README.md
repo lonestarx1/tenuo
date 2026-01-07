@@ -34,15 +34,13 @@ Deterministic, reproducible tests showing the math works.
 python -m benchmarks.escalation.evaluate
 ```
 
-| Scenario | Attacks | Policy Violations Blocked | Rate |
-|----------|---------|--------------------------|------|
-| Email Exfiltration | 10 | 8 | 80% |
-| Financial Limits | 8 | 4 | 50% |
-| File Access | 9 | 7 | 78% |
-| **Total** | **27** | **19** | **70%** |
+| Scenario | What's Tested |
+|----------|---------------|
+| Email Exfiltration | CEL constraint blocks external recipients |
+| Financial Limits | Range constraint blocks amount > threshold |
+| File Access | Pattern constraint blocks unauthorized paths |
 
-> 19 calls violated q-agent's policy and were blocked.
-> These same calls would have succeeded for p-agent.
+The benchmark counts calls that violate q-agent's policy but would have succeeded for p-agent.
 
 ### Layer 2: Real-World Validation (AgentDojo)
 
