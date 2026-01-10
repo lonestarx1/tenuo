@@ -42,6 +42,7 @@ pub mod cel;
 pub mod constraints;
 pub mod crypto;
 pub mod diff;
+pub mod domain;
 pub mod error;
 pub mod extraction;
 pub mod gateway_config;
@@ -73,8 +74,9 @@ pub mod python;
 
 // Re-exports for convenience
 pub use constraints::{
-    All, Any, CelConstraint, Constraint, ConstraintSet, ConstraintValue, Contains, Exact, Not,
-    NotOneOf, OneOf, Pattern, Range, RegexConstraint, Subset, Wildcard, MAX_CONSTRAINT_DEPTH,
+    All, Any, CelConstraint, Cidr, Constraint, ConstraintSet, ConstraintValue, Contains, Exact,
+    Not, NotOneOf, OneOf, Pattern, Range, RegexConstraint, Subset, UrlPattern, Wildcard,
+    MAX_CONSTRAINT_DEPTH,
 };
 pub use crypto::{PublicKey, Signature, SigningKey};
 pub use error::{Error, Result};
@@ -136,7 +138,7 @@ pub const DEFAULT_WARRANT_TTL_SECS: u64 = 5 * 60; // 300 seconds
 /// All signatures are computed over: `SIGNATURE_CONTEXT || payload`
 ///
 /// This prevents a signature from one protocol being valid in another.
-pub const SIGNATURE_CONTEXT: &[u8] = b"tenuo-warrant-v1";
+pub use domain::WARRANT_CONTEXT as SIGNATURE_CONTEXT;
 
 /// Current wire format version
 pub const WIRE_VERSION: u8 = 1;
