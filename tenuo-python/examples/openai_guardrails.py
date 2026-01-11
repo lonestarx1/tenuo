@@ -25,14 +25,13 @@ Requirements:
 
 import os
 
+# Universal constraints (work with any integration)
+from tenuo import Subpath, UrlSafe, Shlex, Pattern, Range
+
+# OpenAI-specific
 from tenuo.openai import (
     guard,
     GuardBuilder,
-    Pattern,
-    Range,
-    Subpath,  # Secure path containment (prevents traversal)
-    UrlSafe,  # SSRF protection (blocks private IPs, metadata)
-    Shlex,  # Shell injection protection (validates commands)
     ToolDenied,
     ConstraintViolation,
     AuditEvent,
