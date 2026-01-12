@@ -13,16 +13,16 @@ Run:
 """
 
 import argparse
-import sys
 import time
 import os
 
 # Optional imports for --live mode
 HAS_LIVE_DEPS = False
 try:
-    import openai
-    from tenuo.openai import GuardBuilder, ConstraintViolation
-    from tenuo import Subpath
+    import openai  # noqa: F401
+    from tenuo.openai import GuardBuilder, ConstraintViolation  # noqa: F401
+    from tenuo import Subpath  # noqa: F401
+
     HAS_LIVE_DEPS = True
 except ImportError:
     pass
@@ -84,24 +84,24 @@ BUFFER_STATES = [
 def demo_vulnerable():
     """Show the vulnerable validate-as-you-go approach."""
     subheader("VULNERABLE: Validate-As-You-Go")
-    
+
     print(f"  {Colors.DIM}Simulating LLM token stream arriving...{Colors.RESET}")
     print()
-    
+
     executed = False
-    
+
     for i, (buffer, looks_complete, extracted_path) in enumerate(BUFFER_STATES):
-        
+
         # Show buffer state
         print(f"  {Colors.GRAY}[Buffer  ]{Colors.RESET} {buffer}")
         time.sleep(0.25)
-        
+
         # Vulnerable: validate as soon as JSON looks complete
         if looks_complete and not executed:
             print()
             print(f"  {Colors.YELLOW}[VALIDATE]{Colors.RESET} JSON complete! Checking: \"{extracted_path}\"")
             time.sleep(0.15)
-            
+
             # Naive prefix check
             if extracted_path.startswith("/data/"):
                 print(f"  {Colors.GREEN}[VALIDATE]{Colors.RESET} ✅ PASS — starts with /data/")
@@ -113,52 +113,52 @@ def demo_vulnerable():
                 print(f"  {Colors.DIM}          ...but more tokens are still arriving...{Colors.RESET}")
                 print()
                 time.sleep(0.3)
-    
+
     # Show final result
     print()
     print(f"  {Colors.RED}{'─' * 61}{Colors.RESET}")
     print(f"  {Colors.RED}[RESULT  ] 💀 ATTACK SUCCEEDED{Colors.RESET}")
     print()
-    print(f"            Validated: \"/data/report.txt\"")
-    print(f"            Executed:  \"/data/report.txt/../../../etc/passwd\"")
-    print(f"            Opened:    \"/etc/passwd\"")
+    print("            Validated: \"/data/report.txt\"")
+    print("            Executed:  \"/data/report.txt/../../../etc/passwd\"")
+    print("            Opened:    \"/etc/passwd\"")
     print(f"  {Colors.RED}{'─' * 61}{Colors.RESET}")
     print()
     print(f"  {Colors.YELLOW}Check ran on PARTIAL value. Execution got COMPLETE value.{Colors.RESET}")
 
 
 # ============================================================================
-#  SAFE IMPLEMENTATION  
+#  SAFE IMPLEMENTATION
 # ============================================================================
 
 def demo_safe():
     """Show the safe buffer-verify-emit approach."""
     subheader("SAFE: Buffer-Verify-Emit (Tenuo)")
-    
+
     print(f"  {Colors.DIM}Same token stream, different handling...{Colors.RESET}")
     print()
-    
+
     for i, (buffer, looks_complete, extracted_path) in enumerate(BUFFER_STATES):
-        
+
         # Show buffer state
         print(f"  {Colors.GRAY}[Buffer  ]{Colors.RESET} {buffer}")
         time.sleep(0.25)
-        
+
         # Safe: even if JSON looks complete, wait for end-of-stream
         if looks_complete and i < len(BUFFER_STATES) - 1:
             print(f"  {Colors.CYAN}[WAIT    ]{Colors.RESET} Looks complete, but waiting for end-of-stream...")
             time.sleep(0.2)
-    
+
     # Stream truly ended — NOW validate
     print()
     print(f"  {Colors.CYAN}[STREAM  ]{Colors.RESET} ✓ End-of-stream signal received")
     print()
-    
+
     final_path = "/data/report.txt/../../../etc/passwd"
     print(f"  {Colors.YELLOW}[TENUO   ]{Colors.RESET} Now checking COMPLETE value:")
     print(f"            \"{final_path}\"")
     time.sleep(0.3)
-    
+
     # Normalize
     normalized = os.path.normpath(final_path)
     print()
@@ -166,13 +166,13 @@ def demo_safe():
     print(f"            \"{final_path}\"")
     print(f"            → \"{normalized}\"")
     time.sleep(0.3)
-    
+
     # Check containment
     print()
     print(f"  {Colors.YELLOW}[TENUO   ]{Colors.RESET} Check: \"{normalized}\" starts with \"/data/\"?")
     time.sleep(0.2)
     print(f"  {Colors.RED}[TENUO   ]{Colors.RESET} ❌ NO — escapes jail")
-    
+
     print()
     print(f"  {Colors.GREEN}{'─' * 61}{Colors.RESET}")
     print(f"  {Colors.GREEN}[RESULT  ] 🛡️ BLOCKED by Tenuo — attack prevented{Colors.RESET}")
@@ -188,7 +188,7 @@ def demo_safe():
 def demo_comparison():
     """Side-by-side comparison."""
     subheader("THE DIFFERENCE")
-    
+
     print(f"""
   ┌───────────────────────────────┬───────────────────────────────┐
   │  {Colors.RED}VULNERABLE{Colors.RESET}                     │  {Colors.GREEN}SAFE (Tenuo){Colors.RESET}                  │
@@ -219,7 +219,7 @@ def demo_comparison():
 def show_code():
     """Show the code fix and Tenuo's actual implementation."""
     subheader("THE FIX: Buffer-Verify-Emit Pattern")
-    
+
     print(f"  {Colors.BOLD}Concept:{Colors.RESET}")
     code = f'''
   {Colors.GRAY}# Buffer tool arguments. Verify complete JSON. Then execute.{Colors.RESET}
@@ -229,7 +229,7 @@ def show_code():
   async for chunk in llm.stream():
       if chunk.is_tool_call:
           tool_args_buffer.append(chunk.args_delta)  {Colors.CYAN}# BUFFER{Colors.RESET}
-          
+
           if chunk.is_tool_call_complete:
               complete_args = json.loads("".join(tool_args_buffer))
               validated = verify(complete_args)         {Colors.CYAN}# VERIFY{Colors.RESET}
@@ -240,7 +240,7 @@ def show_code():
           yield chunk  {Colors.GRAY}# Text streams immediately{Colors.RESET}
 '''
     print(code)
-    
+
     print(f"  {Colors.BOLD}Tenuo's actual implementation:{Colors.RESET}")
     print()
     tenuo_code = f'''
@@ -267,10 +267,10 @@ def show_code():
     print(tenuo_code)
     print()
     print(f"  {Colors.BOLD}See:{Colors.RESET} tenuo/openai.py → GuardedCompletions._guard_stream()")
-    print(f"       Full implementation with ToolCallBuffer + verify-on-complete")
+    print("       Full implementation with ToolCallBuffer + verify-on-complete")
     print()
     print(f"  {Colors.BOLD}Key insight:{Colors.RESET} Text streams normally. Only tool arguments buffer.")
-    print(f"              Minimal latency cost. Essential security gain.")
+    print("              Minimal latency cost. Essential security gain.")
 
 
 # ============================================================================
@@ -299,26 +299,26 @@ READ_FILE_TOOL = {
 def demo_race():
     """Filesystem race window demo (symlink attack)."""
     # No external deps needed - we simulate the token stream
-    
+
     header("FILESYSTEM TOCTOU: The Race Window")
-    
-    print(f"  TOCTOU: Time-of-Check to Time-of-Use")
+
+    print("  TOCTOU: Time-of-Check to Time-of-Use")
     print(f"  The {Colors.BOLD}race window{Colors.RESET} between validation and execution.")
     print()
     print(f"  {Colors.GRAY}Real-world examples:{Colors.RESET}")
-    print(f"    • CVE-2018-15664 (Docker): symlink race → container escape")
-    print(f"    • CVE-2022-3590 (WordPress): DNS rebinding → SSRF")
+    print("    • CVE-2018-15664 (Docker): symlink race → container escape")
+    print("    • CVE-2022-3590 (WordPress): DNS rebinding → SSRF")
     print()
-    
+
     input("  Press Enter to see the race window...")
     print()
-    
+
     # =========================================================================
     # EXPLOIT: Show the real race condition
     # =========================================================================
-    
+
     subheader("THE RACE WINDOW")
-    
+
     # REAL TOCTOU: The race is between validation and execution.
     #
     # This is NOT about partial JSON parsing (real SDKs handle that correctly).
@@ -333,9 +333,9 @@ def demo_race():
     #   - Tool call args accumulate in delta.tool_calls[i].function.arguments
     #   - SDK does NOT buffer for you - you get raw chunks
     #   - finish_reason="tool_calls" signals completion
-    
+
     PATH = "/data/report.txt"
-    
+
     print(f"  {Colors.BOLD}Real SDK behavior (OpenAI Python):{Colors.RESET}")
     print()
     print(f"  {Colors.GRAY}# https://github.com/openai/openai-python{Colors.RESET}")
@@ -343,9 +343,9 @@ def demo_race():
     print(f"  {Colors.GRAY}for chunk in stream:{Colors.RESET}")
     print(f"  {Colors.GRAY}    # You receive raw chunks - SDK doesn't buffer{Colors.RESET}")
     print()
-    
+
     time.sleep(0.5)
-    
+
     print(f"  {Colors.BOLD}The Race Window:{Colors.RESET}")
     print()
     print(f"  {Colors.YELLOW}[T=0ms]{Colors.RESET}  Tool call complete: read_file(\"{PATH}\")")
@@ -367,7 +367,7 @@ def demo_race():
     print(f"  {Colors.YELLOW}[T=5ms]{Colors.RESET}  Kernel resolves symlink...")
     time.sleep(0.3)
     print(f"  {Colors.RED}[T=6ms]{Colors.RESET}  Actually opens: /etc/passwd")
-    
+
     print()
     print(f"  {Colors.RED}{'─' * 59}{Colors.RESET}")
     print(f"  {Colors.RED}💀 TOCTOU EXPLOIT (CVE-2018-15664 class){Colors.RESET}")
@@ -378,25 +378,25 @@ def demo_race():
     print(f"  {Colors.GRAY}The Map (string) was valid. The Territory (filesystem) changed.{Colors.RESET}")
     print(f"  {Colors.GRAY}This is why you need Layer 2 (path_jail) at open() time.{Colors.RESET}")
     print(f"  {Colors.RED}{'─' * 59}{Colors.RESET}")
-    
+
     # =========================================================================
     # SAFE: Tenuo's approach
     # =========================================================================
-    
+
     print()
     input("  Press Enter to see how Tenuo prevents this...")
     print()
-    
+
     subheader("THE FIX: Layer 1.5 + Layer 2")
-    
+
     print(f"  {Colors.BOLD}Layer 1.5 alone can't prevent this.{Colors.RESET}")
     print(f"  {Colors.GRAY}Subpath validates the STRING. The filesystem can still change.{Colors.RESET}")
     print()
     print(f"  {Colors.BOLD}You need Layer 2: validate at open() time.{Colors.RESET}")
     print()
-    
+
     time.sleep(0.3)
-    
+
     print(f"  {Colors.CYAN}from path_jail import safe_open{Colors.RESET}")
     print(f"  {Colors.CYAN}from tenuo import Subpath{Colors.RESET}")
     print()
@@ -409,9 +409,9 @@ def demo_race():
     print(f"  {Colors.GRAY}        # If symlink escapes /data, raises SecurityError{Colors.RESET}")
     print(f"  {Colors.GRAY}        return f.read(){Colors.RESET}")
     print()
-    
+
     time.sleep(0.3)
-    
+
     print(f"  {Colors.BOLD}With path_jail, the attack fails:{Colors.RESET}")
     print()
     print(f"  {Colors.YELLOW}[T=0ms]{Colors.RESET}  Tool call: read_file(\"{PATH}\")")
@@ -429,7 +429,7 @@ def demo_race():
     print(f"  {Colors.YELLOW}[T=6ms]{Colors.RESET}  → /etc/passwd inside /data? {Colors.RED}NO{Colors.RESET}")
     time.sleep(0.2)
     print(f"  {Colors.GREEN}[T=7ms]{Colors.RESET}  → {Colors.GREEN}SecurityError raised. File NOT opened.{Colors.RESET}")
-    
+
     print()
     print(f"  {Colors.GREEN}{'─' * 59}{Colors.RESET}")
     print(f"  {Colors.GREEN}🛡️ ATTACK BLOCKED BY LAYER 2{Colors.RESET}")
@@ -440,7 +440,7 @@ def demo_race():
     print(f"  {Colors.GRAY}The race window still exists, but the attacker can't win.{Colors.RESET}")
     print(f"  {Colors.GRAY}path_jail checks reality at the moment of open().{Colors.RESET}")
     print(f"  {Colors.GREEN}{'─' * 59}{Colors.RESET}")
-    
+
     print()
     print(f"  {Colors.BOLD}Defense in depth:{Colors.RESET}")
     print()
@@ -450,7 +450,7 @@ def demo_race():
     print(f"  {Colors.GRAY}# Install: pip install tenuo path_jail{Colors.RESET}")
     print(f"  {Colors.GRAY}# Docs: https://github.com/tenuo-ai/path-jail-python{Colors.RESET}")
     print()
-    
+
     return True
 
 
@@ -468,11 +468,11 @@ def main():
         help="Show filesystem race window (symlink attack)"
     )
     args = parser.parse_args()
-    
+
     if args.race:
         demo_race()
         return
-    
+
     # Simulated demo (default)
     header("STREAMING TOCTOU DEMO")
     print("  Companion to 'The Map is not the Territory'")
@@ -485,23 +485,23 @@ def main():
     print()
     print(f"  {Colors.GRAY}Tip: Run with --race to see filesystem race window{Colors.RESET}")
     print()
-    
+
     input("  Press Enter to see the vulnerable implementation...")
     demo_vulnerable()
-    
+
     input("\n  Press Enter to see the safe implementation...")
     demo_safe()
-    
+
     input("\n  Press Enter to see the comparison...")
     demo_comparison()
-    
+
     input("\n  Press Enter to see the code fix...")
     show_code()
-    
+
     print()
     print(f"  {'=' * 63}")
     print(f"  {Colors.BOLD}RULE:{Colors.RESET} Never validate partial tool arguments.")
-    print(f"        Buffer the complete JSON. Verify. Only then execute.")
+    print("        Buffer the complete JSON. Verify. Only then execute.")
     print(f"  {'=' * 63}")
     print()
     print("  Read more: https://niyikiza.com/posts/map-territory/")
