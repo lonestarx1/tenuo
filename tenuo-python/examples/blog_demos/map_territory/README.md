@@ -2,6 +2,13 @@
 
 Interactive demos for the blog post **"The Map is not the Territory: The Agent-Tool Trust Boundary"**.
 
+## Try It Now (Zero Install)
+
+```bash
+# See the streaming TOCTOU attack in action - no dependencies required
+curl -s https://raw.githubusercontent.com/tenuo-ai/tenuo/main/tenuo-python/examples/blog_demos/map_territory/streaming_toctou.py | python3
+```
+
 ## Quick Start
 
 ```bash
