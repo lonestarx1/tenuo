@@ -5,7 +5,7 @@ Interactive demos for the blog post **"The Map is not the Territory: The Agent-T
 ## Try It Now (Zero Install)
 
 ```bash
-# See the streaming TOCTOU attack in action - no dependencies required
+# See the filesystem TOCTOU (symlink race) in action — no dependencies required
 curl -s https://raw.githubusercontent.com/tenuo-ai/tenuo/main/tenuo-python/examples/blog_demos/map_territory/streaming_toctou.py | python3
 ```
 
@@ -91,22 +91,24 @@ Demonstrates Time-of-Check-to-Time-of-Use vulnerabilities in LLM tool calls.
 
 **Two modes:**
 ```bash
-# Streaming TOCTOU (partial JSON)
+# Filesystem TOCTOU (symlink race) — default, bulletproof example
 python streaming_toctou.py
 
-# Filesystem TOCTOU (symlink race)
-python streaming_toctou.py --race
+# Streaming TOCTOU (partial JSON buffering) — pedagogical illustration
+python streaming_toctou.py --streaming
 ```
 
-**Default mode** shows how validating partial JSON leads to TOCTOU.
-
-**Race mode** shows the filesystem race window:
+**Default mode** shows the filesystem race window — a real exploit vector:
 - Layer 1.5 validates the path string ✓
 - Attacker swaps symlink in the race window
 - Kernel opens the wrong file
 - Layer 2 (path_jail) catches this at execution time
 
-**Simulated mode output:**
+**Streaming mode** illustrates why buffering matters:
+- Shows how validating partial JSON leads to TOCTOU
+- *Note: Modern OpenAI SDKs signal completion (`finish_reason`), so this is more of a teaching illustration than a production exploit. The principle matters for custom streaming handlers.*
+
+**Streaming mode output:**
 
 ```
 ┌───────────────────────────────────────────────────────────────┐

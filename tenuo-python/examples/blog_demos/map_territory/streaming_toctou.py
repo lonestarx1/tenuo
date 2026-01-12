@@ -8,8 +8,8 @@ https://niyikiza.com/posts/map-territory/
 Demonstrates Time-of-Check-to-Time-of-Use vulnerabilities in LLM tool calls.
 
 Run:
-    python streaming_toctou.py           # Streaming TOCTOU (partial JSON)
-    python streaming_toctou.py --race    # Filesystem TOCTOU (symlink race)
+    python streaming_toctou.py             # Filesystem TOCTOU (symlink attack) — default
+    python streaming_toctou.py --streaming # Streaming TOCTOU (partial JSON buffering)
 """
 
 import argparse
@@ -294,9 +294,13 @@ READ_FILE_TOOL = {
 }
 
 
-def demo_race():
+def demo_race(wait=None):
     """Filesystem race window demo (symlink attack)."""
     # No external deps needed - we simulate the token stream
+
+    if wait is None:
+        # Default to blocking input
+        wait = lambda msg: input(msg)  # noqa: E731
 
     header("FILESYSTEM TOCTOU: The Race Window")
 
@@ -308,7 +312,7 @@ def demo_race():
     print("    • CVE-2022-3590 (WordPress): DNS rebinding → SSRF")
     print()
 
-    input("  Press Enter to see the race window...")
+    wait("  Press Enter to see the race window...")
     print()
 
     # =========================================================================
@@ -382,7 +386,7 @@ def demo_race():
     # =========================================================================
 
     print()
-    input("  Press Enter to see how Tenuo prevents this...")
+    wait("  Press Enter to see how Tenuo prevents this...")
     print()
 
     subheader("THE FIX: Layer 1.5 + Layer 2")
@@ -459,13 +463,18 @@ def demo_race():
 # ============================================================================
 
 def main():
-    parser = argparse.ArgumentParser(description="Streaming TOCTOU Demo - Shows vulnerability and Tenuo's fix")
-    parser.add_argument("--race", action="store_true", help="Show filesystem race window (symlink attack)")
+    parser = argparse.ArgumentParser(description="TOCTOU Demo - Shows vulnerability and Tenuo's fix")
+    parser.add_argument(
+        "--streaming",
+        action="store_true",
+        help="Show streaming TOCTOU (partial JSON buffering illustration)",
+    )
     parser.add_argument("--auto", action="store_true", help="Non-interactive mode (for piped/curl usage)")
     args = parser.parse_args()
 
     # Auto-detect if we're being piped (no tty)
     import sys
+
     interactive = sys.stdin.isatty() and not args.auto
 
     def wait(msg: str = ""):
@@ -474,22 +483,39 @@ def main():
         else:
             time.sleep(0.5)  # Brief pause for readability
 
-    if args.race:
-        demo_race()
+    if args.streaming:
+        # Streaming demo (pedagogical illustration)
+        demo_streaming(interactive, wait)
         return
 
-    # Simulated demo (default)
+    # Filesystem race demo (default) — the bulletproof example
+    demo_race(wait)
+
+
+def demo_streaming(interactive: bool, wait):
+    """Streaming TOCTOU demo — illustrates why buffering matters."""
     header("STREAMING TOCTOU DEMO")
     print("  Companion to 'The Map is not the Territory'")
     print("  https://niyikiza.com/posts/map-territory/")
     print()
     print(f"  {Colors.BOLD}TOCTOU{Colors.RESET} = Time-of-Check to Time-of-Use")
     print()
-    print("  A classic vulnerability pattern, now appearing in LLM streaming:")
+    print("  A classic vulnerability pattern applied to LLM streaming:")
     print("  Validate a partial value, execute a different complete value.")
     print()
+
+    # Add the caveat
+    print(f"  {Colors.YELLOW}{'─' * 59}{Colors.RESET}")
+    print(f"  {Colors.YELLOW}Note:{Colors.RESET} Modern OpenAI SDKs signal when tool calls are complete")
+    print("        (finish_reason='tool_calls'). This demo illustrates")
+    print("        why that matters — and what goes wrong if you build")
+    print("        your own streaming handler and validate partial buffers.")
+    print(f"  {Colors.YELLOW}{'─' * 59}{Colors.RESET}")
+    print()
+
     if interactive:
-        print(f"  {Colors.GRAY}Tip: Run with --race to see filesystem race window{Colors.RESET}")
+        print(f"  {Colors.GRAY}Default mode (no flags) shows the filesystem race — a real{Colors.RESET}")
+        print(f"  {Colors.GRAY}exploit vector that doesn't depend on SDK implementation.{Colors.RESET}")
         print()
 
     wait("  Press Enter to see the vulnerable implementation...")
