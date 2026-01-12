@@ -458,11 +458,21 @@ def demo_race():
 #  MAIN
 # ============================================================================
 
-
 def main():
     parser = argparse.ArgumentParser(description="Streaming TOCTOU Demo - Shows vulnerability and Tenuo's fix")
     parser.add_argument("--race", action="store_true", help="Show filesystem race window (symlink attack)")
+    parser.add_argument("--auto", action="store_true", help="Non-interactive mode (for piped/curl usage)")
     args = parser.parse_args()
+
+    # Auto-detect if we're being piped (no tty)
+    import sys
+    interactive = sys.stdin.isatty() and not args.auto
+
+    def wait(msg: str = ""):
+        if interactive:
+            input(msg)
+        else:
+            time.sleep(0.5)  # Brief pause for readability
 
     if args.race:
         demo_race()
@@ -478,19 +488,20 @@ def main():
     print("  A classic vulnerability pattern, now appearing in LLM streaming:")
     print("  Validate a partial value, execute a different complete value.")
     print()
-    print(f"  {Colors.GRAY}Tip: Run with --race to see filesystem race window{Colors.RESET}")
-    print()
+    if interactive:
+        print(f"  {Colors.GRAY}Tip: Run with --race to see filesystem race window{Colors.RESET}")
+        print()
 
-    input("  Press Enter to see the vulnerable implementation...")
+    wait("  Press Enter to see the vulnerable implementation...")
     demo_vulnerable()
 
-    input("\n  Press Enter to see the safe implementation...")
+    wait("\n  Press Enter to see the safe implementation...")
     demo_safe()
 
-    input("\n  Press Enter to see the comparison...")
+    wait("\n  Press Enter to see the comparison...")
     demo_comparison()
 
-    input("\n  Press Enter to see the code fix...")
+    wait("\n  Press Enter to see the code fix...")
     show_code()
 
     print()
@@ -505,3 +516,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
