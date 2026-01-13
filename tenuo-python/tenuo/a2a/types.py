@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 from contextvars import ContextVar
 
 __all__ = [
@@ -36,45 +36,37 @@ __all__ = [
 # Context Variable for Current Task Warrant
 # =============================================================================
 
-current_task_warrant: ContextVar[Optional["Warrant"]] = ContextVar(
-    "current_task_warrant", default=None
-)
+current_task_warrant: ContextVar[Optional["Warrant"]] = ContextVar("current_task_warrant", default=None)
 
 
 # =============================================================================
 # Grant - Skill-level capability
 # =============================================================================
 
+
 @dataclass
 class Grant:
     """
     A skill-level capability grant with constraints.
-    
+
     Example:
         Grant(
             skill="search_papers",
             constraints={"sources": UrlSafe(allow_domains=["arxiv.org"])}
         )
     """
+
     skill: str
     constraints: Dict[str, Any] = field(default_factory=dict)
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Serialize for wire format."""
-        return {
-            "skill": self.skill,
-            "constraints": {
-                k: _serialize_constraint(v) for k, v in self.constraints.items()
-            }
-        }
-    
+        return {"skill": self.skill, "constraints": {k: _serialize_constraint(v) for k, v in self.constraints.items()}}
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "Grant":
         """Deserialize from wire format."""
-        return cls(
-            skill=data["skill"],
-            constraints=data.get("constraints", {})
-        )
+        return cls(skill=data["skill"], constraints=data.get("constraints", {}))
 
 
 def _serialize_constraint(constraint: Any) -> Dict[str, Any]:
@@ -108,29 +100,31 @@ def _serialize_constraint(constraint: Any) -> Dict[str, Any]:
 # AgentCard - Agent metadata from discovery
 # =============================================================================
 
+
 @dataclass
 class AgentCard:
     """
     Agent metadata returned by discover().
-    
+
     Contains the agent's public key, skills, and Tenuo extension info.
     """
+
     name: str
     url: str
     skills: List[SkillInfo]
     tenuo_extension: Optional[TenuoExtension] = None
     raw: Dict[str, Any] = field(default_factory=dict)
-    
+
     @property
     def requires_warrant(self) -> bool:
         """Check if this agent requires warrants."""
         return self.tenuo_extension is not None and self.tenuo_extension.required
-    
+
     @property
     def public_key(self) -> Optional[str]:
         """Get agent's public key if available."""
         return self.tenuo_extension.public_key if self.tenuo_extension else None
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "AgentCard":
         """Parse from JSON response."""
@@ -150,10 +144,11 @@ class AgentCard:
 @dataclass
 class SkillInfo:
     """Information about a skill offered by an agent."""
+
     id: str
     name: str
     constraints: Dict[str, ConstraintInfo] = field(default_factory=dict)
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "SkillInfo":
         """Parse skill info from JSON."""
@@ -171,9 +166,10 @@ class SkillInfo:
 @dataclass
 class ConstraintInfo:
     """Constraint requirement info from skill discovery."""
+
     type: str
     required: bool = True
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ConstraintInfo":
         return cls(
@@ -185,11 +181,12 @@ class ConstraintInfo:
 @dataclass
 class TenuoExtension:
     """Tenuo-specific extension in AgentCard."""
+
     version: str
     required: bool
     public_key: str
     previous_keys: List[str] = field(default_factory=list)
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "TenuoExtension":
         return cls(
@@ -204,12 +201,14 @@ class TenuoExtension:
 # Task Types
 # =============================================================================
 
+
 @dataclass
 class Message:
     """A message in a task conversation."""
+
     role: str  # "user", "assistant"
     content: str
-    
+
     def to_dict(self) -> Dict[str, Any]:
         return {"role": self.role, "content": self.content}
 
@@ -217,12 +216,13 @@ class Message:
 @dataclass
 class TaskResult:
     """Result from a completed task."""
+
     task_id: str
     status: str  # "complete", "error", "cancelled"
     output: Optional[str] = None
     artifacts: List[Dict[str, Any]] = field(default_factory=list)
     error: Optional[Dict[str, Any]] = None
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "TaskResult":
         return cls(
@@ -236,6 +236,7 @@ class TaskResult:
 
 class TaskUpdateType(str, Enum):
     """Types of task updates in streaming."""
+
     STATUS = "status"
     ARTIFACT = "artifact"
     MESSAGE = "message"
@@ -246,10 +247,11 @@ class TaskUpdateType(str, Enum):
 @dataclass
 class TaskUpdate:
     """Update during streaming task execution."""
+
     type: TaskUpdateType
     task_id: str
     data: Dict[str, Any] = field(default_factory=dict)
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "TaskUpdate":
         return cls(
@@ -263,8 +265,10 @@ class TaskUpdate:
 # Audit Events
 # =============================================================================
 
+
 class AuditEventType(str, Enum):
     """Types of audit events."""
+
     WARRANT_RECEIVED = "warrant_received"
     WARRANT_VALIDATED = "warrant_validated"
     WARRANT_REJECTED = "warrant_rejected"
@@ -276,6 +280,7 @@ class AuditEventType(str, Enum):
 @dataclass
 class AuditEvent:
     """Structured audit event for compliance logging."""
+
     timestamp: datetime
     event: AuditEventType
     task_id: str
@@ -287,7 +292,7 @@ class AuditEvent:
     constraints_checked: Dict[str, Any] = field(default_factory=dict)
     latency_ms: int = 0
     reason: Optional[str] = None
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Serialize for JSON audit log."""
         return {
@@ -299,7 +304,9 @@ class AuditEvent:
                 "jti": self.warrant_jti,
                 "iss": self.warrant_iss,
                 "sub": self.warrant_sub,
-            } if self.warrant_jti else None,
+            }
+            if self.warrant_jti
+            else None,
             "outcome": self.outcome,
             "constraints_checked": self.constraints_checked,
             "latency_ms": self.latency_ms,
@@ -316,7 +323,4 @@ class AuditEvent:
 try:
     from tenuo_core import Warrant
 except ImportError as e:
-    raise ImportError(
-        "tenuo_core is required for A2A. "
-        "Install with: pip install tenuo[a2a]"
-    ) from e
+    raise ImportError("tenuo_core is required for A2A. Install with: pip install tenuo[a2a]") from e

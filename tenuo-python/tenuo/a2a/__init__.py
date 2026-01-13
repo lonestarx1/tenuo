@@ -7,24 +7,24 @@ authorization to that communication.
 Server usage:
     from tenuo.a2a import A2AServer
     from tenuo.constraints import Subpath
-    
+
     server = A2AServer(
         name="Research Agent",
         url="https://research-agent.example.com",
         public_key=my_public_key,
         trusted_issuers=[orchestrator_key],
     )
-    
+
     @server.skill("read_file", constraints={"path": Subpath})
     async def read_file(path: str) -> str:
         with open(path) as f:
             return f.read()
-    
+
     uvicorn.run(server.app, port=8000)
 
 Client usage:
     from tenuo.a2a import A2AClient, delegate
-    
+
     client = A2AClient("https://research-agent.example.com")
     result = await client.send_task(
         message="Read the config",

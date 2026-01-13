@@ -272,9 +272,9 @@ See [Related Work](https://tenuo.dev/related-work) for detailed comparison.
 
 | Feature | Status |
 |---------|--------|
+| Google A2A integration | ✅ Implemented (`pip install tenuo[a2a]`) |
 | Multi-sig approvals | Partial (notary in v0.2) |
 | TypeScript/Node SDK | Planned for v0.2 |
-| Google A2A integration | Planned for v0.2 |
 | Context-aware constraints | Spec under development |
 | Revocation service | Basic revocation via Authorizer; distributed revocation in v0.3 |
 

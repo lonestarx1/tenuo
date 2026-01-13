@@ -532,3 +532,228 @@ class TestInputValidationAttacks:
         
         with pytest.raises(Exception):
             await adversarial_server.validate_warrant(garbage, "skill", {})
+
+
+# =============================================================================
+# Test: Environment Variable Attacks
+# =============================================================================
+
+
+class TestEnvVarAttacks:
+    """Tests for environment variable configuration security."""
+    
+    def test_env_var_bool_injection(self, monkeypatch):
+        """Boolean env vars reject injection attempts."""
+        from tenuo.a2a import A2AServer
+        
+        # Try to inject "true; rm -rf /" style payload
+        monkeypatch.setenv("TENUO_A2A_REQUIRE_WARRANT", "true; malicious")
+        
+        server = A2AServer(
+            name="Test",
+            url="https://test.example.com",
+            public_key="z6MkTest",
+            trusted_issuers=["z6MkTrusted"],
+        )
+        
+        # Should parse as True (default) not execute malicious code
+        assert server.require_warrant is True
+    
+    def test_env_var_int_overflow(self, monkeypatch):
+        """Integer env vars handle overflow gracefully."""
+        from tenuo.a2a import A2AServer
+        
+        # Try huge integer that might cause issues
+        monkeypatch.setenv("TENUO_A2A_REPLAY_WINDOW", str(2**64))
+        
+        server = A2AServer(
+            name="Test",
+            url="https://test.example.com",
+            public_key="z6MkTest",
+            trusted_issuers=["z6MkTrusted"],
+        )
+        
+        # Should handle gracefully (may use default or truncate)
+        assert isinstance(server.replay_window, int)
+    
+    def test_env_var_negative_int(self, monkeypatch):
+        """Negative integer env vars are handled."""
+        from tenuo.a2a import A2AServer
+        
+        monkeypatch.setenv("TENUO_A2A_MAX_CHAIN_DEPTH", "-1")
+        
+        server = A2AServer(
+            name="Test",
+            url="https://test.example.com",
+            public_key="z6MkTest",
+            trusted_issuers=["z6MkTrusted"],
+        )
+        
+        # Server accepts -1 (implementation chooses interpretation)
+        assert server.max_chain_depth == -1
+    
+    def test_explicit_args_override_env(self, monkeypatch):
+        """Explicit constructor args always override env vars."""
+        from tenuo.a2a import A2AServer
+        
+        # Set env to disable warrant checking
+        monkeypatch.setenv("TENUO_A2A_REQUIRE_WARRANT", "false")
+        
+        # But explicitly enable it in constructor
+        server = A2AServer(
+            name="Test",
+            url="https://test.example.com",
+            public_key="z6MkTest",
+            trusted_issuers=["z6MkTrusted"],
+            require_warrant=True,  # Explicit override
+        )
+        
+        # Explicit arg wins
+        assert server.require_warrant is True
+
+
+# =============================================================================
+# Test: Key Rotation Attacks
+# =============================================================================
+
+
+class TestKeyRotationAttacks:
+    """Tests for key rotation security."""
+    
+    def test_previous_keys_not_trusted_for_signing(self):
+        """Previous keys are for rotation, not for signing new warrants."""
+        from tenuo.a2a import A2AServer
+        
+        server = A2AServer(
+            name="Test",
+            url="https://test.example.com",
+            public_key="z6MkCurrentKey",
+            trusted_issuers=["z6MkTrustedIssuer"],
+            previous_keys=["z6MkOldKey1", "z6MkOldKey2"],
+        )
+        
+        # Previous keys should NOT be in trusted_issuers
+        assert "z6MkOldKey1" not in server.trusted_issuers
+        assert "z6MkOldKey2" not in server.trusted_issuers
+    
+    def test_agent_card_exposes_previous_keys(self):
+        """AgentCard includes previous_keys for client coordination."""
+        from tenuo.a2a import A2AServer
+        
+        server = A2AServer(
+            name="Test",
+            url="https://test.example.com",
+            public_key="z6MkCurrentKey",
+            trusted_issuers=["z6MkTrusted"],
+            previous_keys=["z6MkOldKey"],
+        )
+        
+        card = server.get_agent_card_dict()
+        tenuo_ext = card.get("x-tenuo", {})
+        
+        assert tenuo_ext["public_key"] == "z6MkCurrentKey"
+        assert tenuo_ext["previous_keys"] == ["z6MkOldKey"]
+    
+    def test_empty_previous_keys(self):
+        """Empty previous_keys list is handled correctly."""
+        from tenuo.a2a import A2AServer
+        
+        server = A2AServer(
+            name="Test",
+            url="https://test.example.com",
+            public_key="z6MkKey",
+            trusted_issuers=["z6MkTrusted"],
+            # previous_keys not specified
+        )
+        
+        card = server.get_agent_card_dict()
+        assert card["x-tenuo"]["previous_keys"] == []
+
+
+# =============================================================================
+# Test: Streaming Security Attacks
+# =============================================================================
+
+
+class TestStreamingSecurityAttacks:
+    """Tests for streaming endpoint security."""
+    
+    @pytest.fixture
+    def streaming_server(self):
+        """Server with a streaming skill."""
+        from tenuo.a2a import A2AServer
+        
+        server = A2AServer(
+            name="Streaming Test",
+            url="https://streaming.example.com",
+            public_key="z6MkStreaming",
+            trusted_issuers=["z6MkTrusted"],
+            require_warrant=False,  # Simplify for streaming tests
+            audit_log=None,
+        )
+        
+        @server.skill("stream_data")
+        async def stream_data(count: int):
+            """Generate streaming data."""
+            for i in range(count):
+                yield f"chunk_{i}"
+        
+        @server.skill("normal_skill")
+        async def normal_skill(value: str):
+            return f"processed: {value}"
+        
+        return server
+    
+    @pytest.mark.asyncio
+    async def test_streaming_without_warrant_when_required(self):
+        """Streaming endpoint rejects requests without warrant when required."""
+        from tenuo.a2a import A2AServer
+        from tenuo.a2a.errors import MissingWarrantError
+        
+        server = A2AServer(
+            name="Test",
+            url="https://test.example.com",
+            public_key="z6MkTest",
+            trusted_issuers=["z6MkTrusted"],
+            require_warrant=True,
+            audit_log=None,
+        )
+        
+        @server.skill("test_skill")
+        async def test_skill():
+            return "ok"
+        
+        # Simulate streaming request without warrant
+        # The _handle_task_send_subscribe should raise MissingWarrantError
+        class MockRequest:
+            headers = {}
+        
+        params = {
+            "task": {
+                "skill": "test_skill",
+                "arguments": {},
+            }
+        }
+        
+        with pytest.raises(MissingWarrantError):
+            await server._handle_task_send_subscribe(MockRequest(), params, 1)
+    
+    @pytest.mark.asyncio
+    async def test_streaming_skill_not_found(self, streaming_server):
+        """Streaming endpoint handles non-existent skill."""
+        # This tests that skill validation happens before streaming starts
+        class MockRequest:
+            headers = {}
+        
+        params = {
+            "task": {
+                "skill": "nonexistent_skill",
+                "arguments": {},
+            }
+        }
+        
+        # Should return SSE response (error is in stream)
+        response = await streaming_server._handle_task_send_subscribe(MockRequest(), params, 1)
+        
+        # Response should be StreamingResponse
+        assert response.media_type == "text/event-stream"

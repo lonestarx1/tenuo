@@ -146,6 +146,8 @@ authorized = warrant.authorize(
 
 ```bash
 pip install tenuo                  # Core only
+pip install "tenuo[openai]"        # + OpenAI Agents SDK
+pip install "tenuo[a2a]"           # + Agent-to-Agent (multi-agent)
 pip install "tenuo[fastapi]"       # + FastAPI integration
 pip install "tenuo[langchain]"     # + LangChain
 pip install "tenuo[langgraph]"     # + LangGraph (includes LangChain)
@@ -406,6 +408,38 @@ warrant.is_terminal    # bool (can't delegate further)
 warrant.capabilities   # dict of tool -> constraints
 ```
 
+## A2A Integration (Multi-Agent)
+
+Warrant-based authorization for agent-to-agent communication:
+
+```python
+from tenuo.a2a import A2AServer, A2AClient
+from tenuo.constraints import Subpath, UrlSafe
+
+# Server: expose skills with constraints
+server = A2AServer(
+    name="Research Agent",
+    url="https://research-agent.example.com",
+    public_key=my_public_key,
+    trusted_issuers=[orchestrator_key],
+)
+
+@server.skill("search_papers", constraints={"sources": UrlSafe})
+async def search_papers(query: str, sources: list[str]) -> list[dict]:
+    return await do_search(query, sources)
+
+# Client: send tasks with attenuated warrants
+client = A2AClient("https://research-agent.example.com")
+task_warrant = my_warrant.attenuate(
+    grants=[{"skill": "search_papers", "constraints": {"sources": UrlSafe(allow_domains=["arxiv.org"])}}],
+    audience="https://research-agent.example.com",
+    key=my_key,
+)
+result = await client.send_task(message="Find papers on security", warrant=task_warrant)
+```
+
+See [A2A Integration](https://tenuo.dev/a2a) for full documentation.
+
 ## MCP Integration
 
 _(Requires Python ≥3.10)_
@@ -502,6 +536,7 @@ python examples/mcp_integration.py
 
 - **[Quickstart](https://tenuo.dev/quickstart)** — Get running in 5 minutes
 - **[OpenAI](https://tenuo.dev/openai)** — Direct API protection with streaming defense
+- **[A2A](https://tenuo.dev/a2a)** — Inter-agent delegation with warrants
 - **[FastAPI](https://tenuo.dev/fastapi)** — Zero-boilerplate API protection
 - **[LangChain](https://tenuo.dev/langchain)** — Tool protection
 - **[LangGraph](https://tenuo.dev/langgraph)** — Multi-agent security
