@@ -55,6 +55,10 @@ mcp = [
 cli = [
     "rich>=10.0.0",
 ]
+a2a = [
+    "httpx>=0.24",     # Async HTTP client for A2AClient
+    "starlette>=0.27", # ASGI framework for A2AServer
+]
 
 # Development dependencies (includes features + tools)
 dev = [
