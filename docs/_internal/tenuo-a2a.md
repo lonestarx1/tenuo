@@ -81,12 +81,18 @@ class A2AClient:
         self,
         message: str | Message,
         warrant: Warrant,
+        *,
+        skill: str,
+        arguments: dict[str, Any] | None = None,
     ) -> TaskResult: ...
     
     async def send_task_streaming(
         self,
         message: str | Message,
         warrant: Warrant,
+        *,
+        skill: str,
+        arguments: dict[str, Any] | None = None,
     ) -> AsyncIterator[TaskUpdate]: ...
 ```
 
@@ -108,11 +114,11 @@ For long-running streaming tasks, the warrant may expire mid-stream.
 - If task duration is unpredictable, implement reconnection with fresh warrant:
 
 ```python
-async def resilient_stream(client, message, get_warrant):
+async def resilient_stream(client, message, skill, get_warrant):
     while True:
         warrant = get_warrant()  # Fresh warrant
         try:
-            async for update in client.send_task_streaming(message, warrant):
+            async for update in client.send_task_streaming(message, warrant, skill=skill):
                 yield update
                 if update.type == "complete":
                     return
