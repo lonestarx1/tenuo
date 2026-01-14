@@ -1480,7 +1480,7 @@ impl PyWildcard {
     fn validate_attenuation(&self, child: &Bound<'_, PyAny>) -> PyResult<()> {
         // Convert Python constraint to Rust
         let child_constraint = py_to_constraint(child)?;
-        
+
         // Wildcard can attenuate to anything - the Rust core validates this
         Constraint::Wildcard(self.inner.clone())
             .validate_attenuation(&child_constraint)

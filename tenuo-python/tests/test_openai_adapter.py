@@ -627,7 +627,7 @@ class TestCheckConstraint:
 
     def test_regex_matching(self):
         """Regex constraint uses partial matching (Rust is_match semantics).
-        
+
         NOTE: Rust regex uses is_match() which is partial matching.
         For fullmatch semantics, use anchors: ^pattern$
         """

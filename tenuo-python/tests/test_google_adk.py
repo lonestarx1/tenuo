@@ -3,8 +3,8 @@
 import io
 import json
 import pytest
-from typing import Any, Dict
-from unittest.mock import MagicMock, PropertyMock
+from typing import Any, Dict, Optional
+from unittest.mock import MagicMock
 
 # Mock google.adk classes since they might not be installed
 # We need to do this BEFORE importing tenuo.google_adk because plugin.py imports from google.adk
@@ -42,7 +42,7 @@ class MockBaseTool:
 
 
 class MockToolContext:
-    def __init__(self, state: Dict[str, Any] = None):
+    def __init__(self, state: Optional[Dict[str, Any]] = None):
         self.state = state or {}
 
 
@@ -293,9 +293,7 @@ class TestZeroTrust:
             args={"url": "https://api.example.com/v1", "timeout": 9999},
             tool_context=context,
         )
-
-        # Still rejected if extra unknown args beyond what's declared
-        # (only url and timeout are in capabilities)
+        assert result is None  # Should be allowed with Wildcard timeout
 
 
 class TestDynamicWarrants:
@@ -1100,12 +1098,12 @@ class TestInvariantSubpathTraversal:
 
     def test_encoded_dotdot_is_literal_string(self):
         """URL-encoded ..%2f is treated as literal characters (not decoded).
-        
+
         NOTE: Subpath operates on the STRING it receives. URL decoding
         is the responsibility of the HTTP layer BEFORE the value reaches
         the constraint. The literal string "/data/..%2f" does NOT traverse
         because %2f is not a path separator - it's literal characters.
-        
+
         If the HTTP layer decodes it to "../" THEN Subpath will block it.
         """
         guard = GuardBuilder().allow("read_file", path=Subpath("/data")).build()
@@ -1118,10 +1116,10 @@ class TestInvariantSubpathTraversal:
             MockToolContext(),
         )
 
-        # This is ALLOWED because "%2f" is literal, not "/" 
+        # This is ALLOWED because "%2f" is literal, not "/"
         # The constraint sees: /data/..%2f..%2fetc/passwd (no traversal)
         assert result is None  # Not a security issue - no actual traversal
-        
+
         # But if it were decoded first, it would be blocked:
         result_decoded = guard.before_tool(
             MockBaseTool("read_file"),

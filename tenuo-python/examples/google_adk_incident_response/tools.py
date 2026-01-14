@@ -11,12 +11,12 @@ import time
 def read_logs(path: str) -> str:
     """
     Read log files from the filesystem.
-    
+
     Simulates reading security logs and detecting suspicious patterns.
-    
+
     Args:
         path: Log file path (e.g., "/var/log/access/app.log")
-    
+
     Returns:
         Log content as string
     """
@@ -28,26 +28,26 @@ def read_logs(path: str) -> str:
         "2026-01-14 10:00:17 [WARN] Failed login: admin from 203.0.113.5",
         # ... repeated 124 more times
     ]
-    
+
     # Simulate 127 failed logins from the same IP
     for i in range(124):
         log_entries.append(
             f"2026-01-14 10:00:{18+i:02d} [WARN] Failed login: admin from 203.0.113.5"
         )
-    
+
     return "\n".join(log_entries)
 
 
 def query_threat_db(query: str, table: str) -> Dict[str, Any]:
     """
     Query threat intelligence database.
-    
+
     Simulates looking up IPs, domains, or indicators in a threat database.
-    
+
     Args:
         query: Search query (e.g., IP address, domain)
         table: Database table to query ("threats", "users")
-    
+
     Returns:
         Query results as dictionary
     """
@@ -75,20 +75,20 @@ def query_threat_db(query: str, table: str) -> Dict[str, Any]:
 def block_ip(ip: str, duration: int = 3600) -> Dict[str, Any]:
     """
     Block IP address at the firewall.
-    
+
     Simulates adding a firewall rule to block traffic from a malicious IP.
-    
+
     Args:
         ip: IP address to block
         duration: Block duration in seconds (default: 1 hour)
-    
+
     Returns:
         Result dictionary with rule ID and expiration
     """
     rule_id = f"fw_rule_{int(time.time())}"
-    expires_at = time.strftime("%Y-%m-%d %H:%M:%S", 
+    expires_at = time.strftime("%Y-%m-%d %H:%M:%S",
                                 time.localtime(time.time() + duration))
-    
+
     return {
         "rule_id": rule_id,
         "ip": ip,
@@ -101,12 +101,12 @@ def block_ip(ip: str, duration: int = 3600) -> Dict[str, Any]:
 def quarantine_user(user_id: str) -> Dict[str, Any]:
     """
     Quarantine a user account.
-    
+
     Simulates suspending a compromised user account.
-    
+
     Args:
         user_id: User identifier to quarantine
-    
+
     Returns:
         Result dictionary with quarantine status
     """

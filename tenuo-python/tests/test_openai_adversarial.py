@@ -9,18 +9,14 @@ This suite tests the adapter against active attack vectors, specifically ensurin
 """
 
 import pytest
-import time
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, patch
 
 from tenuo.openai import (
     verify_tool_call,
-    ToolDenied,
     ConstraintViolation,
-    WarrantDenied,
     MissingSigningKey,
-    check_constraint,
 )
-from tenuo import Warrant, SigningKey, Pattern, Exact
+from tenuo import Warrant, SigningKey, Pattern
 
 # =============================================================================
 # 1. Zero Trust & Argument Validation
@@ -44,14 +40,14 @@ class TestZeroTrust:
                 "path": Pattern("/safe/*")
             }
         }
-        
+
         # 1. Legitimate call
         args_good = {"path": "/safe/data.txt"}
         verify_tool_call(tool_name, args_good, ["read_file"], None, constraints)
 
         # 2. Attack: Extra argument
         args_attack = {"path": "/safe/data.txt", "admin": "true"}
-        
+
         # This SHOULD fail, but we expect it might pass currently
         with pytest.raises(ConstraintViolation, match="Unknown argument"):
             verify_tool_call(tool_name, args_attack, ["read_file"], None, constraints)
@@ -73,13 +69,13 @@ class TestFailClosed:
         """
         class UnknownConstraint:
             pass
-            
+
         constraints = {
             "read_file": {
                 "path": UnknownConstraint()
             }
         }
-        
+
         # The check_constraint function handles fail-closed for the constraint check itself,
         # verifying that verify_tool_call propagates that failure.
         with pytest.raises(ConstraintViolation):
@@ -93,7 +89,7 @@ class TestFailClosed:
         # Mock check_constraint to raise an exception
         with patch("tenuo.openai.check_constraint", side_effect=ValueError("Oops")):
             constraints = {"read_file": {"path": Pattern("*")}}
-            
+
             # Should raise ConstraintViolation (denial), NOT ValueError (crash)
             with pytest.raises(ConstraintViolation, match="internal validation error"):
                 verify_tool_call("read_file", {"path": "/any"}, ["read_file"], None, constraints)
@@ -107,7 +103,7 @@ class TestCryptoIntegrity:
     """
     Tests for PoP signature binding and integrity.
     """
-    
+
     @pytest.fixture
     def keypair(self):
         sk = SigningKey.generate()
@@ -121,7 +117,7 @@ class TestCryptoIntegrity:
         sk, pk = keypair
         # Warrant is just a mock here as we test verify_tool_call logic
         warrant = MagicMock(spec=Warrant)
-        
+
         with pytest.raises(MissingSigningKey):
             verify_tool_call("tool", {}, None, None, None, warrant=warrant, signing_key=None)
 
@@ -141,23 +137,23 @@ class TestStreamingSecurity:
         Invariant: Buffer-verify-emit MUST validate complete call before emission.
         """
         from tenuo.openai import ToolCallBuffer
-        
+
         # Simulate streaming chunks building a tool call
         buffer = ToolCallBuffer(id="call_123", name="read_file")
-        
+
         # Accumulate arguments
         buffer.args_json = '{"path": "/data/file.txt", "admin": "true"}'
-        
+
         # Parse complete arguments
         import json
         args = json.loads(buffer.args_json)
-        
+
         constraints = {
             "read_file": {
                 "path": Pattern("/data/*")
             }
         }
-        
+
         # Should DENY because "admin" is not in constraints (Zero Trust)
         with pytest.raises(ConstraintViolation, match="Unknown argument"):
             verify_tool_call("read_file", args, ["read_file"], None, constraints)
@@ -168,19 +164,19 @@ class TestStreamingSecurity:
         Invariant: Violation caught during buffer verification, not after emission.
         """
         from tenuo.openai import ToolCallBuffer
-        
+
         buffer = ToolCallBuffer(id="call_456", name="read_file")
         buffer.args_json = '{"path": "/etc/passwd"}'
-        
+
         import json
         args = json.loads(buffer.args_json)
-        
+
         constraints = {
             "read_file": {
                 "path": Pattern("/data/*")
             }
         }
-        
+
         # Should DENY because path violates constraint
         with pytest.raises(ConstraintViolation):
             verify_tool_call("read_file", args, ["read_file"], None, constraints)
