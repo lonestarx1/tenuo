@@ -59,6 +59,9 @@ a2a = [
     "httpx>=0.24",     # Async HTTP client for A2AClient
     "starlette>=0.27", # ASGI framework for A2AServer
 ]
+google_adk = [
+    "google-adk>=0.1",  # Google Agent Development Kit
+]
 
 # Development dependencies (includes features + tools)
 dev = [

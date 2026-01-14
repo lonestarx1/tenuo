@@ -933,7 +933,7 @@ class A2AServer:
 
     def _check_constraint(self, constraint: Any, value: Any, param: str = "") -> bool:
         """
-        Check if value satisfies constraint.
+        Check if value satisfies constraint using Rust core bindings.
 
         Fails closed: unknown constraint types are denied for security.
 
@@ -941,14 +941,19 @@ class A2AServer:
         We use duck typing (hasattr checks) because:
         1. tenuo_core constraints are PyO3-compiled Rust types
         2. isinstance() doesn't work well across the FFI boundary
-        3. The method names are part of the stable API contract:
-           - Subpath: contains(path) -> bool
-           - UrlSafe: is_safe(url) -> bool
-           - Shlex: matches(value) -> bool
+        3. The method names are part of the stable API contract
 
-        Note: Simple constraints like Pattern, Exact, Range are typically
-        evaluated within the Warrant itself during authorize(), not here.
-        This method handles "active" constraints that need runtime checks.
+        All constraint runtime checks use Rust core bindings:
+          - Subpath.contains()     -> Rust core
+          - UrlSafe.is_safe()      -> Rust core
+          - Cidr.contains_ip()     -> Rust core
+          - Pattern.matches()      -> Rust core
+          - Shlex.matches()        -> Rust core
+          - Range.contains()       -> Rust core
+          - Exact.matches()        -> Rust core
+          - OneOf.contains()       -> Rust core
+          - NotOneOf.allows()      -> Rust core
+          - Wildcard.matches()     -> Rust core
 
         If tenuo_core changes these method names, tests in test_a2a.py will fail.
         See TestConstraintMethodNames for regression tests.
@@ -964,51 +969,76 @@ class A2AServer:
         Raises:
             UnknownConstraintError: If constraint type is not recognized
         """
-        # Handle Rust constraint types via duck typing
-        # Method names are stable API - see docstring
-        if hasattr(constraint, "contains"):
-            # Subpath constraint
+        constraint_type = type(constraint).__name__
+
+        # =================================================================
+        # RUST CORE METHODS - Type-aware dispatch
+        # =================================================================
+
+        # Subpath - filesystem path containment (Rust core)
+        if hasattr(constraint, "contains") and constraint_type == "Subpath":
             return constraint.contains(str(value))
-        elif hasattr(constraint, "is_safe"):
-            # UrlSafe constraint
+
+        # UrlSafe - SSRF protection (Rust core)
+        if hasattr(constraint, "is_safe"):
             if isinstance(value, list):
                 return all(constraint.is_safe(str(v)) for v in value)
             return constraint.is_safe(str(value))
-        elif hasattr(constraint, "matches"):
-            # Shlex constraint
-            return constraint.matches(str(value))
-        elif isinstance(constraint, type):
-            # Type constraint (e.g., str, int)
-            return isinstance(value, constraint)
-        elif hasattr(constraint, "pattern"):
-            # Pattern constraint - MUST use tenuo_core for matching
-            # No Python fallback - fail-closed for security
-            try:
-                from tenuo_core import Pattern, ConstraintValue
 
-                if isinstance(constraint, Pattern):
-                    cv = ConstraintValue.from_any(value)
-                    return constraint.matches(cv)
-                else:
-                    # Has .pattern but not a core Pattern - reject
-                    raise UnknownConstraintError(
-                        constraint_type=type(constraint).__name__,
-                        param=param,
-                    )
-            except ImportError:
-                # Core not available - fail closed
-                raise UnknownConstraintError(
-                    constraint_type="Pattern (tenuo_core unavailable)",
-                    param=param,
-                )
-        else:
-            # SECURITY: Unknown constraint type - FAIL CLOSED
-            # We don't recognize this constraint, so we cannot validate it.
-            # Allowing by default would be a security hole.
-            raise UnknownConstraintError(
-                constraint_type=type(constraint).__name__,
-                param=param,
-            )
+        # Cidr - IP address range (Rust core)
+        if hasattr(constraint, "contains_ip"):
+            return constraint.contains_ip(str(value))
+
+        # Pattern - glob matching (Rust core)
+        if hasattr(constraint, "matches") and constraint_type == "Pattern":
+            return constraint.matches(value)
+
+        # Shlex - shell command validation (Rust core via Python shlex)
+        if hasattr(constraint, "matches") and constraint_type == "Shlex":
+            return constraint.matches(str(value))
+
+        # UrlPattern - URL pattern matching (Rust core)
+        if hasattr(constraint, "matches_url"):
+            return constraint.matches_url(str(value))
+
+        # Range - numeric bounds (Rust core)
+        if hasattr(constraint, "contains") and constraint_type == "Range":
+            try:
+                return constraint.contains(float(value))
+            except (ValueError, TypeError):
+                return False  # Non-numeric value fails Range check
+
+        # Exact - exact value match (Rust core)
+        if hasattr(constraint, "matches") and constraint_type == "Exact":
+            return constraint.matches(str(value))
+
+        # OneOf - set membership (Rust core)
+        if hasattr(constraint, "contains") and constraint_type == "OneOf":
+            return constraint.contains(str(value))
+
+        # NotOneOf - exclusion list (Rust core)
+        if hasattr(constraint, "allows") and constraint_type == "NotOneOf":
+            return constraint.allows(str(value))
+
+        # Wildcard - matches anything (Rust core)
+        if hasattr(constraint, "matches") and constraint_type == "Wildcard":
+            return constraint.matches(str(value))
+
+        # Regex - regex matching (Rust core)
+        if hasattr(constraint, "matches") and constraint_type == "Regex":
+            return constraint.matches(value)
+
+        # Type constraint (e.g., str, int)
+        if isinstance(constraint, type):
+            return isinstance(value, constraint)
+
+        # SECURITY: Unknown constraint type - FAIL CLOSED
+        # We don't recognize this constraint, so we cannot validate it.
+        # Allowing by default would be a security hole.
+        raise UnknownConstraintError(
+            constraint_type=constraint_type,
+            param=param,
+        )
 
     def _deserialize_constraint(self, data: Any, param: str = "") -> Any:
         """

@@ -107,6 +107,15 @@ child = (parent.grant_builder()
 
 ---
 
+## Production Deployment Policy
+
+> [!IMPORTANT]
+> **Tier 2 (Warrant + PoP) is the recommended pattern for production systems.**
+>
+> While Tier 1 guardrails provide effective protection against prompt injection and accidental misuse, they can be modified or bypassed by anyone with code access. For production environments where insider threats or container compromise are concerns, use Tier 2 with cryptographic warrants.
+
+---
+
 ## Threat Model
 
 ### What Tenuo Protects Against
@@ -178,6 +187,15 @@ The authorization flow is strictly ordered to reject unauthorized requests befor
 3. **Constraint Matching** (Regex/Looping): $\mathcal{O}(N)$ - Only executed **after** the request is cryptographically authenticated.
 
 **Why this matters**: An attacker cannot force the server to evaluate complex regex or deep constraint trees by sending 100k requests, because looking up constraints happens *after* the signature check. If they don't have a valid private key, the request is dropped with minimal CPU cost.
+
+### Fail-Closed Validation (Zero Trust Data)
+Tenuo extends Zero Trust beyond identity (keys) to **data validation**.
+
+**Philosophy**: Ambiguity is a vulnerability. If Tenuo encounters data it doesn't strictly understand or expect, it fails closed (denies).
+
+1.  **Closed-World Arguments**: If you confine a tool with constraints, *any* unmentioned argument triggers a denial. Zero Trust means no "shadow arguments" can sneak past validation.
+2.  **Unknown Constraints**: If the runtime encounters a constraint type it doesn't recognize (e.g., mismatched version), it defaults to **DENY**. It never fails open.
+3.  **Parser Safety**: URL and Path parsers are hardened against polyglot payloads (e.g., JSON-in-URL). If a payload looks malformed or ambiguous, it is rejected.
 
 ---
 
