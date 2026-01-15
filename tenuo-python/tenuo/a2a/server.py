@@ -229,28 +229,41 @@ class SkillDefinition:
 
 class A2AServerBuilder:
     """
-    Fluent builder for A2AServer.
+    Build an A2A server that accepts warrant-authorized requests.
 
-    Provides a more ergonomic API consistent with OpenAI and ADK builders:
+    **What is A2A?**
+    Agent-to-Agent (A2A) is a protocol for agents to call each other's skills
+    with cryptographic authorization. The server defines skills, and clients
+    call them with warrants that prove they're allowed.
+
+    **Quick Start:**
+        from tenuo.a2a import A2AServerBuilder
 
         server = (A2AServerBuilder()
-            .name("Research Agent")
-            .url("https://research-agent.example.com")
-            .key(my_signing_key)
-            .trust(orchestrator_key)
-            .require_warrant()
-            .require_pop()
+            .name("Research Agent")                     # Display name
+            .url("https://research.example.com")        # Your public URL
+            .key(my_signing_key)                        # Your identity
+            .accept_warrants_from(orchestrator_key)     # Who can give you tasks
             .build())
 
         @server.skill("search")
         async def search(query: str):
-            ...
+            return {"results": [...]}
 
-    Benefits:
-    - Fluent, chainable API
-    - Consistent with GuardBuilder in other integrations
-    - IDE autocomplete for configuration options
-    - Clear required vs optional parameters
+        # Run with: uvicorn server.app:app
+
+    **Key Concepts:**
+    - **skill**: A function this agent can perform (like "search", "read_file")
+    - **warrant**: A signed token proving the caller is allowed to invoke a skill
+    - **accept_warrants_from**: Which public keys can issue valid warrants
+
+    **Fluent Methods:**
+    - `.name()` - Agent display name (required)
+    - `.url()` - Public URL for audience validation (required)
+    - `.key()` - Your signing key (required, extracts public_key)
+    - `.accept_warrants_from()` - Who can issue warrants to you (required)
+    - `.require_warrant()` - Reject requests without warrants (default: True)
+    - `.require_pop()` - Require Proof-of-Possession signatures (default: True)
     """
 
     def __init__(self) -> None:
@@ -301,19 +314,30 @@ class A2AServerBuilder:
         self._public_key = key
         return self
 
-    def trust(self, *issuers: Any) -> "A2AServerBuilder":
+    def accept_warrants_from(self, *issuers: Any) -> "A2AServerBuilder":
         """
-        Add trusted issuers.
+        Accept warrants signed by these issuers.
+
+        This defines WHO can give this agent instructions. Only warrants
+        signed by (or delegated from) these keys will be accepted.
 
         Args:
-            *issuers: Public keys to trust (can be called multiple times)
+            *issuers: Public keys of trusted warrant issuers.
+                     Can be called multiple times to add more.
 
         Example:
-            builder.trust(orchestrator_key)
-            builder.trust(backup_issuer, admin_key)
+            # Accept warrants from orchestrator
+            builder.accept_warrants_from(orchestrator_key)
+
+            # Accept warrants from multiple sources
+            builder.accept_warrants_from(orchestrator_key, admin_key)
         """
         self._trusted_issuers.extend(issuers)
         return self
+
+    def trust(self, *issuers: Any) -> "A2AServerBuilder":
+        """Alias for accept_warrants_from(). Kept for brevity."""
+        return self.accept_warrants_from(*issuers)
 
     def trust_delegated(self, enabled: bool = True) -> "A2AServerBuilder":
         """Accept warrants attenuated from trusted issuers (default: True)."""

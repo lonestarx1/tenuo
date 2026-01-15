@@ -199,12 +199,41 @@ class TenuoOpenAIError(Exception):
 
 
 class ToolDenied(TenuoOpenAIError):
-    """Raised when a tool call is denied by the guardrail."""
+    """Raised when a tool call is denied by the guardrail.
 
-    def __init__(self, tool_name: str, reason: str, code: str = "T1_001"):
-        super().__init__(f"Tool '{tool_name}' denied: {reason}", code)
+    This error includes a quick-fix suggestion to help resolve the issue.
+    """
+
+    def __init__(
+        self,
+        tool_name: str,
+        reason: str,
+        code: str = "T1_001",
+        *,
+        quick_fix: Optional[str] = None,
+        param: Optional[str] = None,
+        value: Any = None,
+    ):
+        # Build helpful message with quick fix
+        msg = f"Tool '{tool_name}' denied: {reason}"
+
+        if quick_fix:
+            msg += f"\n\n  Quick fix: {quick_fix}"
+        elif "not in allowlist" in reason.lower():
+            msg += f'\n\n  Quick fix: Add .allow("{tool_name}") to your GuardBuilder'
+        elif "denylist" in reason.lower():
+            msg += f'\n\n  Quick fix: Remove "{tool_name}" from your denylist'
+        elif param and "constraint" in reason.lower():
+            msg += f"\n\n  Quick fix: Check the constraint for '{param}' parameter"
+
+        msg += "\n  Docs: https://tenuo.dev/docs/openai"
+
+        super().__init__(msg, code)
         self.tool_name = tool_name
         self.reason = reason
+        self.quick_fix = quick_fix
+        self.param = param
+        self.value = value
 
 
 class WarrantDenied(TenuoOpenAIError):
@@ -218,10 +247,32 @@ class WarrantDenied(TenuoOpenAIError):
     - Warrant expiration
     """
 
-    def __init__(self, tool_name: str, reason: str, code: str = "T2_001"):
-        super().__init__(f"Warrant denied tool '{tool_name}': {reason}", code)
+    def __init__(
+        self,
+        tool_name: str,
+        reason: str,
+        code: str = "T2_001",
+        *,
+        param: Optional[str] = None,
+        constraint_type: Optional[str] = None,
+    ):
+        # Build helpful message
+        msg = f"Warrant denied tool '{tool_name}': {reason}"
+
+        if param and constraint_type:
+            msg += f"\n\n  The '{param}' argument violated a {constraint_type} constraint."
+            msg += "\n  This means the value you passed is outside what the warrant allows."
+        elif "not in" in reason.lower() or "not authorized" in reason.lower():
+            msg += "\n\n  The warrant doesn't include this tool in its capabilities."
+            msg += "\n  Request a new warrant with this tool included."
+
+        msg += "\n  Docs: https://tenuo.dev/docs/warrants"
+
+        super().__init__(msg, code)
         self.tool_name = tool_name
         self.reason = reason
+        self.param = param
+        self.constraint_type = constraint_type
 
 
 class MissingSigningKey(TenuoOpenAIError):
@@ -2520,6 +2571,8 @@ __all__ = [
     "WarrantDenied",
     "MissingSigningKey",
     "ConfigurationError",
+    # Zero-config entry point
+    "protect",
     # Re-export constraints for convenience
     "Pattern",
     "Exact",
@@ -2541,3 +2594,82 @@ __all__ = [
     "Warrant",
     "SigningKey",
 ]
+
+
+# =============================================================================
+# Zero-Config Entry Point
+# =============================================================================
+
+
+def protect(
+    client: Any,
+    *,
+    tools: Optional[List[Any]] = None,
+) -> GuardedClient:
+    """
+    Wrap an OpenAI client with Tenuo protection. Zero configuration required.
+
+    This is the simplest way to add Tenuo to your OpenAI integration.
+    It provides "fail-closed" security: only explicitly allowed tools can run.
+
+    Args:
+        client: OpenAI client (sync or async)
+        tools: List of allowed tools (names, dicts, or functions).
+               If not provided, ALL tools are denied by default.
+
+    Returns:
+        Protected client that only allows specified tools
+
+    Example - Quick Start::
+
+        from openai import OpenAI
+        from tenuo.openai import protect
+
+        # Protect your client - only 'search' is allowed
+        client = protect(OpenAI(), tools=["search"])
+
+        # This works:
+        response = client.chat.completions.create(
+            model="gpt-4",
+            messages=[{"role": "user", "content": "Search for AI papers"}],
+            tools=[{"type": "function", "function": {"name": "search", ...}}]
+        )
+
+        # If LLM tries to call 'delete_file', it's blocked automatically
+
+    Example - With Constraints::
+
+        from tenuo.openai import protect, GuardBuilder, Subpath
+
+        # For constraints, use GuardBuilder instead:
+        client = (GuardBuilder(OpenAI())
+            .allow("search")
+            .allow("read_file", path=Subpath("/data"))  # Only /data/ allowed
+            .build())
+
+    Next Steps:
+        - Add constraints: Use GuardBuilder().allow("tool", param=Constraint)
+        - Add warrants: Use GuardBuilder().with_warrant(warrant, key)
+        - See docs: https://tenuo.dev/docs/openai
+    """
+    if tools is None:
+        # No tools specified = deny all (fail closed)
+        return guard(client, allow_tools=[], on_denial="raise")
+
+    # Extract tool names
+    tool_names = []
+    for tool in tools:
+        if isinstance(tool, str):
+            tool_names.append(tool)
+        elif isinstance(tool, dict):
+            # OpenAI tool format
+            if "function" in tool:
+                tool_names.append(tool["function"].get("name", ""))
+            elif "name" in tool:
+                tool_names.append(tool["name"])
+        elif callable(tool):
+            tool_names.append(getattr(tool, "__name__", str(tool)))
+        else:
+            tool_names.append(str(tool))
+
+    return guard(client, allow_tools=tool_names, on_denial="raise")

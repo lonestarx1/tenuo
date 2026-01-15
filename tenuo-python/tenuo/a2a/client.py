@@ -45,23 +45,37 @@ logger = logging.getLogger("tenuo.a2a.client")
 
 class A2AClientBuilder:
     """
-    Fluent builder for A2AClient.
+    Build a client to call A2A agents with warrant authorization.
 
-    Provides a more ergonomic API consistent with other Tenuo builders:
+    **What is A2A?**
+    Agent-to-Agent (A2A) is a protocol for agents to call each other's skills.
+    The client sends tasks with warrants proving authorization.
+
+    **Quick Start:**
+        from tenuo.a2a import A2AClientBuilder
 
         client = (A2AClientBuilder()
-            .url("https://research-agent.example.com")
-            .pin_key(expected_public_key)
-            .timeout(30)
-            .warrant(my_warrant, my_key)
+            .url("https://research-agent.example.com")  # Target agent
+            .warrant(my_warrant, my_signing_key)        # Your authorization
             .build())
 
-        result = await client.send_task("Find papers on security")
+        # Call the agent's skill
+        result = await client.send_task(
+            message="Find papers on AI safety",
+            skill="search",
+            arguments={"query": "AI safety"}
+        )
 
-    Benefits:
-    - Fluent, chainable API
-    - Consistent with GuardBuilder in other integrations
-    - Pre-configure warrant for repeated use
+    **Key Concepts:**
+    - **url**: The A2A agent you want to call
+    - **warrant**: Signed token proving you're allowed to call the agent
+    - **signing_key**: Your private key for Proof-of-Possession signatures
+
+    **Fluent Methods:**
+    - `.url()` - Target agent URL (required)
+    - `.warrant()` - Your warrant and signing key (can also pass per-request)
+    - `.pin_key()` - Expected agent public key (prevents TOFU attacks)
+    - `.timeout()` - Request timeout in seconds (default: 30)
     """
 
     def __init__(self) -> None:

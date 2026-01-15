@@ -57,7 +57,7 @@ pip install tenuo
 
 ### Tier 1: Guardrails (5 minutes)
 
-Use the **builder pattern** for clean, fluent constraint definition:
+Use the **builder pattern** for semantic constraints that block attacks:
 
 ```python
 from tenuo.openai import GuardBuilder, Pattern, Subpath
@@ -92,6 +92,14 @@ client = guard(
     allow_tools=["search_web", "read_file"],
     constraints={"read_file": {"path": Subpath("/data")}}
 )
+```
+
+**Simple allowlist only?** Use `protect()` for basic protection without constraints:
+
+```python
+from tenuo.openai import protect
+
+client = protect(openai.OpenAI(), tools=["search", "read_file"])
 ```
 
 **What gets blocked?**

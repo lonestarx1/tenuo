@@ -32,9 +32,11 @@ pip install tenuo[adk]
 
 ---
 
-## Quick Start (Tier 1)
+## Quick Start
 
-**Goal:** Protect your agent's tools in under 10 lines.
+### Tier 1: With Constraints (5 minutes)
+
+Use the **builder pattern** for semantic constraints that block attacks:
 
 ```python
 from google.adk.agents import Agent
@@ -60,6 +62,14 @@ agent = Agent(
 - `web_search(url="http://169.254.169.254/")` - SSRF to AWS metadata
 - `delete_file(...)` - tool not in `.allow()` list
 - Any argument not explicitly constrained (Zero Trust)
+
+**Simple allowlist only?** Use `protect_agent()` for basic protection without constraints:
+
+```python
+from tenuo.google_adk import protect_agent
+
+agent = protect_agent(my_agent, allow=["search", "read_file"])
+```
 
 ---
 

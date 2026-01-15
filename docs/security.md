@@ -58,6 +58,14 @@ authorizer.check(warrant, tool, args)
 cache.set(dedup_key, "1", ttl=120)  # 120s covers the ~2min window
 ```
 
+> [!WARNING]
+> **Distributed Deployments**: The example above requires a shared cache backend. In-memory caches (like Python's `dict`) will not work across:
+> - Multiple service instances (horizontal scaling)
+> - Process restarts (cache is cleared)
+> - Multi-process deployments (separate memory spaces)
+>
+> Use Redis, Memcached, or similar for production distributed systems.
+
 > [!NOTE]
 > **Performance & Responsibility**: You are responsible for provisioning and maintaining the storage backend (e.g., Redis). Tenuo provides the deterministic key but does not manage the statestore. The latency and availability of this check depend entirely on your storage infrastructure.
 
@@ -126,6 +134,49 @@ For technical details, see the [wire format specification](spec/wire-format-v1.m
 > **Tier 2 (Warrant + PoP) is the recommended pattern for production systems.**
 >
 > While Tier 1 guardrails provide effective protection against prompt injection and accidental misuse, they can be modified or bypassed by anyone with code access. For production environments where insider threats or container compromise are concerns, use Tier 2 with cryptographic warrants.
+
+---
+
+## Tier 1 vs Tier 2
+
+**Tier 1** (Runtime Guardrails):
+- Constraint checking at runtime
+- Trust boundary: code access
+- Protects against: prompt injection, LLM hallucinations, SSRF
+- Does NOT protect against: insider threats, container compromise
+
+**Tier 2** (Cryptographic Authorization):
+- All of Tier 1, plus warrant signatures and PoP
+- Trust boundary: cryptographic proof
+- Protects against: all Tier 1 threats, plus tampering and untrusted callers
+- Required for: multi-process delegation, zero-trust environments, audit compliance
+
+**When to use**: Tier 1 for single-process trusted environments. Tier 2 for distributed systems or when you cannot trust the execution environment.
+
+See integration docs ([OpenAI](./openai.md#tier-1-security-model), [ADK](./google-adk.md#tier-1-security-model)) for detailed threat models.
+
+---
+
+## Key Management
+
+**Zeroization**: Signing keys are automatically zeroized on drop (Rust `secrecy` crate + `ed25519-dalek`). Keys stored in memory are cleared when objects are destroyed.
+
+**Rotation**: Key rotation is achieved through **warrant expiry**. Issue new warrants with new keys; old warrants expire naturally via TTL. No manual key rotation infrastructure needed.
+
+**Storage**: Keys in Python integrations are stored in instance variables. For production high-security deployments, consider HSM/KMS integration or key provider abstraction.
+
+---
+
+## Security Invariants
+
+All Tenuo integrations enforce these invariants (see [Integration Guide](../tenuo-python/docs/integration-guide.md#invariant-testing)):
+
+1. **Monotonic Attenuation** - Authority only decreases
+2. **Fail-Closed** - Unknown parameters rejected
+3. **Expiry Enforced** - Expired warrants fail even with valid signatures
+4. **PoP Required** - Tier 2 requires proving key possession
+5. **Signature Verification** - Tampering detected
+6. **Chain Validation** - Delegation chains validated from root to leaf
 
 ---
 

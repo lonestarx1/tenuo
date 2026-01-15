@@ -561,3 +561,83 @@ def generate_hints(
 
     return hints
 
+
+# =============================================================================
+# Zero-Config Entry Point
+# =============================================================================
+
+
+def protect_agent(
+    agent: Any,
+    *,
+    allow: Optional[List[str]] = None,
+) -> Any:
+    """
+    Add Tenuo protection to a Google ADK agent. Zero configuration required.
+
+    This is the simplest way to add Tenuo to your ADK agent.
+    It provides "fail-closed" security: only explicitly allowed tools can run.
+
+    Args:
+        agent: Google ADK Agent instance
+        allow: List of allowed tool names.
+               If not provided, ALL tools are denied by default.
+
+    Returns:
+        The same agent, now protected by Tenuo
+
+    Example - Quick Start::
+
+        from google.adk import Agent
+        from tenuo.google_adk import protect_agent
+
+        agent = protect_agent(
+            Agent(tools=[search, read_file, shell]),
+            allow=["search", "read_file"]  # shell is denied
+        )
+
+    Example - With Constraints::
+
+        from tenuo.google_adk import GuardBuilder
+        from tenuo.constraints import Subpath
+
+        # For constraints, use GuardBuilder:
+        guard = (GuardBuilder()
+            .allow("search")
+            .allow("read_file", path=Subpath("/data"))
+            .build())
+
+        agent = Agent(
+            tools=[search, read_file],
+            before_tool_callback=guard.before_tool,
+        )
+
+    Next Steps:
+        - Add constraints: GuardBuilder().allow("tool", param=Constraint)
+        - Add warrants: GuardBuilder().with_warrant(warrant, key)
+        - See docs: https://tenuo.dev/docs/google-adk
+    """
+    from .guard import GuardBuilder
+
+    if allow is None:
+        allow = []
+
+    # Build guard with allowlist
+    builder = GuardBuilder()
+    for tool_name in allow:
+        builder.allow(tool_name)
+
+    guard = builder.build()
+
+    # Attach to agent
+    # ADK agents have before_tool_callback attribute
+    existing_callback = getattr(agent, "before_tool_callback", None)
+
+    if existing_callback:
+        # Chain with existing callback
+        agent.before_tool_callback = chain_callbacks(guard.before_tool, existing_callback)
+    else:
+        agent.before_tool_callback = guard.before_tool
+
+    return agent
+

@@ -143,7 +143,7 @@ async def main():
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║              RESEARCH AGENT WITH CRYPTOGRAPHIC GUARDRAILS                     ║
 ║                                                                               ║
-║   Showing what Tenuo does that simple if-statements CAN'T:                   ║
+║   Tenuo's key capabilities:                                                  ║
 ║   • Delegation chains with attenuation                                       ║
 ║   • Cryptographic audit proofs                                               ║
 ║   • Multi-agent capability separation                                        ║

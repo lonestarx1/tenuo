@@ -45,12 +45,15 @@ pip install tenuo[a2a]
 **Server (Worker Agent):**
 
 ```python
-from tenuo.a2a import A2AServer
+from tenuo.a2a import A2AServerBuilder
 
-server = A2AServer(
-    name="Worker",
-    trusted_issuers=[orchestrator_public_key],
-)
+# Build server with fluent API
+server = (A2AServerBuilder()
+    .name("Worker")
+    .url("https://worker.example.com")
+    .key(my_signing_key)                    # Your identity
+    .accept_warrants_from(orchestrator_key) # Who can give you tasks
+    .build())
 
 @server.skill("echo")
 async def echo(msg: str) -> str:
@@ -59,10 +62,23 @@ async def echo(msg: str) -> str:
 # uvicorn server:server.app --port 8000
 ```
 
+Or use the direct constructor:
+
+```python
+from tenuo.a2a import A2AServer
+
+server = A2AServer(
+    name="Worker",
+    url="https://worker.example.com",
+    public_key=my_public_key,
+    trusted_issuers=[orchestrator_public_key],
+)
+```
+
 **Client (Orchestrator):**
 
 ```python
-from tenuo.a2a import A2AClient
+from tenuo.a2a import A2AClientBuilder
 from tenuo import Warrant
 
 # Create warrant for this task
@@ -72,14 +88,32 @@ task_warrant = (Warrant.mint_builder()
     .ttl(300)
     .mint(orchestrator_key))
 
-# Send task
+# Build client with default warrant
+client = (A2AClientBuilder()
+    .url("http://localhost:8000")
+    .warrant(task_warrant, orchestrator_key)  # Pre-configure for repeated use
+    .build())
+
+# Send task (warrant already configured)
+result = await client.send_task(
+    skill="echo",
+    arguments={"msg": "hello"},
+)
+print(result.output)  # "Echo: hello"
+```
+
+Or use the direct constructor:
+
+```python
+from tenuo.a2a import A2AClient
+
 client = A2AClient("http://localhost:8000")
 result = await client.send_task(
     skill="echo",
     arguments={"msg": "hello"},
     warrant=task_warrant,
+    signing_key=orchestrator_key,
 )
-print(result.output)  # "Echo: hello"
 ```
 
 That's it. The warrant proves the orchestrator authorized this specific task.
@@ -91,15 +125,15 @@ That's it. The warrant proves the orchestrator authorized this specific task.
 ### Server (Worker)
 
 ```python
-from tenuo.a2a import A2AServer
+from tenuo.a2a import A2AServerBuilder
 from tenuo.constraints import Subpath, UrlSafe
 
-server = A2AServer(
-    name="Research Agent",
-    url="https://research-agent.example.com",
-    public_key=my_public_key,
-    trusted_issuers=[orchestrator_public_key],
-)
+server = (A2AServerBuilder()
+    .name("Research Agent")
+    .url("https://research-agent.example.com")
+    .key(my_signing_key)
+    .accept_warrants_from(orchestrator_public_key)
+    .build())
 
 # Register skills with constraint bindings
 @server.skill("search_papers", constraints={"sources": UrlSafe})
@@ -274,6 +308,22 @@ client = A2AClient(
 
 card = await client.discover()  # Fails if key doesn't match
 ```
+
+### Key Format Compatibility
+
+A2A accepts public keys in multiple formats:
+
+```python
+# All of these work:
+server = A2AServerBuilder()
+    .key(signing_key)  # PublicKey object
+    .accept_warrants_from("a1b2c3...")  # Hex (64 chars)
+    .accept_warrants_from("z6MkpT...")  # Multibase (base58btc)
+    .accept_warrants_from("did:key:z6MkpT...")  # W3C DID
+    .build()
+```
+
+All formats are automatically normalized for comparison. Multibase and DID support requires `pip install base58`.
 
 ---
 

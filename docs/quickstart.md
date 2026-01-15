@@ -259,6 +259,119 @@ Now violations are blocked. Roll out to a subset of traffic first if needed.
 
 ## Framework Integrations
 
+### OpenAI
+
+Protect OpenAI tool calls with the `guard()` wrapper:
+
+```python
+from tenuo import SigningKey, Warrant
+from tenuo.openai import guard
+import openai
+
+# Create warrant
+key = SigningKey.generate()
+warrant = (Warrant.mint_builder()
+    .capability("read_file", path=Subpath("/data"))
+    .holder(key.public_key)
+    .ttl(300)
+    .mint(key))
+
+# Wrap OpenAI client
+client = guard(openai.OpenAI(), warrant=warrant, signing_key=key)
+
+# Tools are automatically protected
+response = client.chat.completions.create(
+    model="gpt-4",
+    messages=[{"role": "user", "content": "Read /data/report.txt"}],
+    tools=[...]
+)
+```
+
+See [OpenAI Integration](./openai) for full documentation.
+
+### LangChain
+
+**Option 1: `auto_protect()` (Zero Config)**
+
+```python
+from tenuo.langchain import auto_protect
+
+# Wrap your executor - defaults to audit mode
+protected_executor = auto_protect(executor)
+result = protected_executor.invoke({"input": "Search for AI news"})
+```
+
+**Option 2: Explicit Warrant Control**
+
+```python
+from tenuo import Warrant, SigningKey
+from tenuo.langchain import guard_tools
+
+key = SigningKey.generate()
+warrant = (Warrant.mint_builder()
+    .capability("search")
+    .holder(key.public_key)
+    .ttl(300)
+    .mint(key))
+
+protected_tools = guard_tools([search_tool, calculator], warrant, key)
+```
+
+See [LangChain Integration](./langchain) for full documentation.
+
+### Google ADK
+
+Use `TenuoGuard` to protect Google ADK tools:
+
+```python
+from google import genai
+from tenuo import SigningKey, Warrant, Subpath
+from tenuo.google_adk import TenuoGuard, GuardBuilder
+
+key = SigningKey.generate()
+warrant = (Warrant.mint_builder()
+    .capability("read_file", path=Subpath("/data"))
+    .holder(key.public_key)
+    .ttl(300)
+    .mint(key))
+
+# Create guard
+guard = TenuoGuard(warrant=warrant, signing_key=key)
+
+# Wrap client
+client = genai.Client(middleware=[guard.before_tool])
+
+# Or use builder for Tier 1 only
+guard = (GuardBuilder()
+    .allow("search")
+    .with_constraints("read_file", path=Subpath("/data"))
+    .build())
+```
+
+See [Google ADK Integration](./google-adk) for full documentation.
+
+### LangGraph
+
+Use `warrant_scope()` to narrow warrants per node:
+
+```python
+from tenuo import warrant_scope, key_scope, Pattern
+
+async def researcher_node(state, warrant, signing_key):
+    # Narrow warrant for this node
+    node_warrant = warrant.grant_builder()
+        .capability("search", query=Pattern("*public*"))
+        .grant(signing_key)
+    
+    with warrant_scope(node_warrant), key_scope(signing_key):
+        results = await search(state["query"])
+    return {"results": results}
+```
+
+See [LangGraph Integration](./langgraph) for full documentation.
+
+---
+
 ### FastAPI
 
 **Option 1: `SecureAPIRouter` (Drop-in Replacement)**
