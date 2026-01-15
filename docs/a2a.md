@@ -130,6 +130,19 @@ async for update in client.send_task_streaming(
 
 The server emits SSE events for status updates, intermediate messages, and final completion.
 
+**Stream timeout (DoS protection):**
+
+```python
+# Default timeout is 300 seconds (5 minutes)
+async for update in client.send_task_streaming(
+    ...,
+    stream_timeout=600.0,  # 10 minute timeout
+):
+    ...
+```
+
+If the stream exceeds `stream_timeout`, a `TimeoutError` is raised. This prevents slow-drip DoS attacks where a malicious server holds connections indefinitely.
+
 ---
 
 ## Server Configuration
@@ -418,5 +431,5 @@ See [API Reference](/api-reference) for complete type signatures.
 
 ## Protocol Specification
 
-For the wire format and protocol details, see the [internal spec](/docs/_internal/tenuo-a2a.md).
+For the wire format and protocol details, see the [Protocol Spec](/spec/protocol-spec-v1) and [Wire Format](/spec/wire-format-v1).
 
