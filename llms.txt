@@ -1,5 +1,5 @@
 # Tenuo LLM Context Document
-# Version: 0.1.0-beta.5
+# Version: 0.1.0-beta.6
 # Last Updated: 2026-01-14
 #
 # This file provides context for AI assistants helping developers work with Tenuo.
