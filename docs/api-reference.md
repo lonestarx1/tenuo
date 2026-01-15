@@ -412,7 +412,7 @@ warrant.capabilities        # {'tools': ['read_file'], 'path': '/data/*', 'max_s
 | Method | Returns | Description |
 |--------|---------|-------------|
 | `attenuate(constraints, keypair, ttl_seconds=None, holder=None)` | `Warrant` | Create narrower child warrant |
-| `attenuate()` | `AttenuationBuilder` | Create builder for attenuation with diff preview |
+| `grant_builder()` | `GrantBuilder` | Create builder for delegation/attenuation |
 | `issue()` | `IssuanceBuilder` | Create execution warrant from issuer warrant |
 | `delegate(holder, tools=None, **constraints)` | `Warrant` | Convenience method to delegate (requires context) |
 
@@ -672,12 +672,12 @@ Note: `with_*` methods are available as aliases for backward compatibility.
 
 ---
 
-### AttenuationBuilder
+### GrantBuilder
 
-Builder for attenuating (narrowing) existing warrants.
+Builder for delegating (granting) from parent warrants. Returned by `warrant.grant_builder()`.
 
 ```python
-builder = warrant.grant_builder()
+builder = parent_warrant.grant_builder()
 ```
 
 #### Methods
@@ -686,17 +686,17 @@ All setter methods are **dual-purpose**: call with argument to set (returns self
 
 | Method | Returns | Description |
 |--------|---------|-------------|
-| `inherit_all()` | `AttenuationBuilder` | **POLA opt-in**: Inherit all capabilities from parent |
-| `capability(tool, constraints)` | `AttenuationBuilder` | Grant specific capability with constraints |
-| `tool(name)` | `AttenuationBuilder` | After `inherit_all()`, narrow to single tool |
-| `tools(names)` | `AttenuationBuilder` | After `inherit_all()`, narrow to subset of tools |
-| `issuable_tool(name)` | `AttenuationBuilder` | Narrow issuable tools (issuer warrants) |
-| `issuable_tools(names)` | `AttenuationBuilder` | Narrow issuable tools (issuer warrants) |
-| `holder(pk)` / `holder()` | `AttenuationBuilder` / `PublicKey` | Set/get holder |
-| `ttl(seconds)` / `ttl()` | `AttenuationBuilder` / `int` | Set/get TTL |
-| `clearance(level)` / `clearance()` | `AttenuationBuilder` / `Clearance` | Set/get clearance level |
-| `intent(text)` / `intent()` | `AttenuationBuilder` / `str` | Set/get intent |
-| `terminal()` | `AttenuationBuilder` | Make warrant terminal (no further delegation) |
+| `inherit_all()` | `GrantBuilder` | **POLA opt-in**: Inherit all capabilities from parent |
+| `capability(tool, constraints)` | `GrantBuilder` | Grant specific capability with constraints |
+| `tool(name)` | `GrantBuilder` | After `inherit_all()`, narrow to single tool |
+| `tools(names)` | `GrantBuilder` | After `inherit_all()`, narrow to subset of tools |
+| `issuable_tool(name)` | `GrantBuilder` | Narrow issuable tools (issuer warrants) |
+| `issuable_tools(names)` | `GrantBuilder` | Narrow issuable tools (issuer warrants) |
+| `holder(pk)` / `holder()` | `GrantBuilder` / `PublicKey` | Set/get holder |
+| `ttl(seconds)` / `ttl()` | `GrantBuilder` / `int` | Set/get TTL |
+| `clearance(level)` / `clearance()` | `GrantBuilder` / `Clearance` | Set/get clearance level |
+| `intent(text)` / `intent()` | `GrantBuilder` / `str` | Set/get intent |
+| `terminal()` | `GrantBuilder` | Make warrant terminal (no further delegation) |
 | `diff()` | `str` | Preview changes (human-readable) |
 | `delegate(signing_key)` | `Warrant` | Issue child with receipt |
 

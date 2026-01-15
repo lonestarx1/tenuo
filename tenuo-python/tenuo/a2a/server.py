@@ -605,7 +605,7 @@ class A2AServer:
             # Handle multibase (z = base58btc for Ed25519)
             if key.startswith("z"):
                 try:
-                    import base58
+                    import base58  # type: ignore[import-not-found]
                     # Strip multibase prefix and decode
                     decoded = base58.b58decode(key[1:])
                     # Ed25519 multicodec prefix is 0xed01 (2 bytes)
