@@ -527,10 +527,10 @@ async def delegate(
     Example:
         # Step 1: Attenuate your warrant for the target
         attenuated = my_warrant.attenuate(
-            grants=[Grant("search_papers")],
-            audience="https://research-agent.example.com",  # Bind to target
-            ttl=300,
-            key=my_key,
+            capabilities={"search_papers": {}},
+            signing_key=my_key,
+            holder=target_agent_pubkey,
+            ttl_seconds=300,
         )
 
         # Step 2: Delegate with the attenuated warrant

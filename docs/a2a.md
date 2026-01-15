@@ -88,14 +88,13 @@ card = await client.discover()
 print(f"Agent: {card.name}")
 print(f"Requires warrant: {card.requires_warrant}")
 
-# Create a scoped warrant for this delegation
-task_warrant = (my_warrant
-    .grant_builder()
-    .skill("search_papers")
-    .constraint("sources", UrlSafe(allow_domains=["arxiv.org"]))
-    .audience("https://research-agent.example.com")
-    .ttl(300)
-    .build(my_signing_key))
+# Attenuate warrant for this delegation
+task_warrant = my_warrant.attenuate(
+    capabilities={"search_papers": {"sources": UrlSafe(allow_domains=["arxiv.org"])}},
+    signing_key=my_signing_key,
+    holder=card.public_key,  # Target agent's public key from discovery
+    ttl_seconds=300,
+)
 
 # Send task with warrant
 result = await client.send_task(
@@ -381,17 +380,16 @@ def issue_orchestrator_warrant(orchestrator_pubkey):
 # orchestrator.py
 from tenuo.a2a import A2AClient
 
-async def delegate_research(topic: str, my_warrant, my_key):
+async def delegate_research(topic: str, my_warrant, my_key, target_pubkey):
     client = A2AClient("https://research-agent.example.com")
     
     # Attenuate warrant for this specific task
-    task_warrant = (my_warrant
-        .grant_builder()
-        .skill("search_papers")
-        .constraint("sources", UrlSafe(allow_domains=["arxiv.org"]))
-        .audience("https://research-agent.example.com")
-        .ttl(300)
-        .build(my_key))
+    task_warrant = my_warrant.attenuate(
+        capabilities={"search_papers": {"sources": UrlSafe(allow_domains=["arxiv.org"])}},
+        signing_key=my_key,
+        holder=target_pubkey,
+        ttl_seconds=300,
+    )
     
     return await client.send_task(
         message=f"Research: {topic}",

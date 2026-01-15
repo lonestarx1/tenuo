@@ -107,6 +107,19 @@ child = (parent.grant_builder()
 
 ---
 
+## Revocation
+
+Tenuo's wire format includes support for signed revocation lists (SRLs) for emergency warrant cancellation. The revocation system allows the Control Plane, issuers, or warrant holders to revoke warrants before they expire.
+
+> [!NOTE]
+> **Development Status**: Revocation is supported in the protocol specification but full integration with the SDK is being finalized for v0.2. The wire format types (`RevocationRequest`, `SignedRevocationList`) are available but end-to-end workflows are still under development.
+
+**Design philosophy**: Tenuo favors **short TTLs (5-15 minutes) over revocation**. A warrant that expires naturally is simpler than one that requires emergency cancellation. Use revocation only when TTL alone cannot meet your security requirements (e.g., long-lived sessions where key compromise must be handled mid-session).
+
+For technical details, see the [wire format specification](spec/wire-format-v1.md#17-signed-revocation-list-srl-wire-format).
+
+---
+
 ## Production Deployment Policy
 
 > [!IMPORTANT]
