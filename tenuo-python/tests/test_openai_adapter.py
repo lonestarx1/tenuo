@@ -1611,11 +1611,11 @@ class TestAuditSupport:
 class TestAgentsSDKIntegration:
     """Tests for OpenAI Agents SDK guardrail integration."""
 
-    def test_create_tool_guardrail(self):
+    def test_create_tier1_guardrail_basic(self):
         """Test creating a Tier 1 guardrail."""
-        from tenuo.openai import create_tool_guardrail, TenuoToolGuardrail
+        from tenuo.openai import create_tier1_guardrail, TenuoToolGuardrail
 
-        guardrail = create_tool_guardrail(
+        guardrail = create_tier1_guardrail(
             allow_tools=["search", "read_file"],
             constraints={"read_file": {"path": Pattern("/data/*")}},
         )
@@ -1625,9 +1625,9 @@ class TestAgentsSDKIntegration:
         assert guardrail.tripwire is True
         assert guardrail.name == "tenuo_tool_guardrail"
 
-    def test_create_warrant_guardrail(self):
+    def test_create_tier2_guardrail(self):
         """Test creating a Tier 2 guardrail."""
-        from tenuo.openai import create_warrant_guardrail, TenuoToolGuardrail
+        from tenuo.openai import create_tier2_guardrail, TenuoToolGuardrail
 
         key = SigningKey.generate()
         warrant = (
@@ -1638,7 +1638,7 @@ class TestAgentsSDKIntegration:
             .mint(key)
         )
 
-        guardrail = create_warrant_guardrail(warrant=warrant, signing_key=key)
+        guardrail = create_tier2_guardrail(warrant=warrant, signing_key=key)
 
         assert isinstance(guardrail, TenuoToolGuardrail)
         assert guardrail.warrant is warrant
@@ -1657,9 +1657,9 @@ class TestAgentsSDKIntegration:
     @pytest.mark.asyncio
     async def test_guardrail_allows_valid_tool_call(self):
         """Test guardrail allows valid tool calls."""
-        from tenuo.openai import create_tool_guardrail
+        from tenuo.openai import create_tier1_guardrail
 
-        guardrail = create_tool_guardrail(constraints={"send_email": {"to": Pattern("*@company.com")}})
+        guardrail = create_tier1_guardrail(constraints={"send_email": {"to": Pattern("*@company.com")}})
 
         input_data = [{"function": {"name": "send_email", "arguments": '{"to": "user@company.com"}'}}]
 
@@ -1672,9 +1672,9 @@ class TestAgentsSDKIntegration:
     @pytest.mark.asyncio
     async def test_guardrail_blocks_invalid_tool_call(self):
         """Test guardrail blocks constraint violations."""
-        from tenuo.openai import create_tool_guardrail
+        from tenuo.openai import create_tier1_guardrail
 
-        guardrail = create_tool_guardrail(constraints={"send_email": {"to": Pattern("*@company.com")}})
+        guardrail = create_tier1_guardrail(constraints={"send_email": {"to": Pattern("*@company.com")}})
 
         input_data = [{"function": {"name": "send_email", "arguments": '{"to": "attacker@evil.com"}'}}]
 
@@ -1687,9 +1687,9 @@ class TestAgentsSDKIntegration:
     @pytest.mark.asyncio
     async def test_guardrail_blocks_denied_tool(self):
         """Test guardrail blocks tools on deny list."""
-        from tenuo.openai import create_tool_guardrail
+        from tenuo.openai import create_tier1_guardrail
 
-        guardrail = create_tool_guardrail(deny_tools=["delete_file"])
+        guardrail = create_tier1_guardrail(deny_tools=["delete_file"])
 
         input_data = [{"function": {"name": "delete_file", "arguments": "{}"}}]
 
@@ -1701,9 +1701,9 @@ class TestAgentsSDKIntegration:
     @pytest.mark.asyncio
     async def test_guardrail_no_tripwire_mode(self):
         """Test guardrail with tripwire=False logs but doesn't halt."""
-        from tenuo.openai import create_tool_guardrail
+        from tenuo.openai import create_tier1_guardrail
 
-        guardrail = create_tool_guardrail(
+        guardrail = create_tier1_guardrail(
             constraints={"send_email": {"to": Pattern("*@company.com")}},
             tripwire=False,
         )
@@ -1719,9 +1719,9 @@ class TestAgentsSDKIntegration:
     @pytest.mark.asyncio
     async def test_guardrail_handles_no_tool_calls(self):
         """Test guardrail handles input without tool calls."""
-        from tenuo.openai import create_tool_guardrail
+        from tenuo.openai import create_tier1_guardrail
 
-        guardrail = create_tool_guardrail(constraints={})
+        guardrail = create_tier1_guardrail(constraints={})
 
         # Plain string input
         result = await guardrail(None, None, "Just a message")
@@ -1776,7 +1776,7 @@ class TestAgentsSDKIntegration:
     @pytest.mark.asyncio
     async def test_warrant_guardrail_authorizes_valid_call(self):
         """Test Tier 2 guardrail with valid warrant authorization."""
-        from tenuo.openai import create_warrant_guardrail
+        from tenuo.openai import create_tier2_guardrail
 
         key = SigningKey.generate()
         warrant = (
@@ -1787,7 +1787,7 @@ class TestAgentsSDKIntegration:
             .mint(key)
         )
 
-        guardrail = create_warrant_guardrail(warrant=warrant, signing_key=key)
+        guardrail = create_tier2_guardrail(warrant=warrant, signing_key=key)
 
         input_data = [{"function": {"name": "send_email", "arguments": '{"to": "user@company.com"}'}}]
 
@@ -1799,7 +1799,7 @@ class TestAgentsSDKIntegration:
     @pytest.mark.asyncio
     async def test_warrant_guardrail_blocks_unauthorized_tool(self):
         """Test Tier 2 guardrail blocks tools not in warrant."""
-        from tenuo.openai import create_warrant_guardrail
+        from tenuo.openai import create_tier2_guardrail
 
         key = SigningKey.generate()
         warrant = (
@@ -1810,7 +1810,7 @@ class TestAgentsSDKIntegration:
             .mint(key)
         )
 
-        guardrail = create_warrant_guardrail(warrant=warrant, signing_key=key)
+        guardrail = create_tier2_guardrail(warrant=warrant, signing_key=key)
 
         input_data = [
             {
@@ -1829,14 +1829,14 @@ class TestAgentsSDKIntegration:
     @pytest.mark.asyncio
     async def test_guardrail_emits_audit_events(self):
         """Test that guardrail emits audit events."""
-        from tenuo.openai import create_tool_guardrail
+        from tenuo.openai import create_tier1_guardrail
 
         events = []
 
         def capture_audit(event: AuditEvent):
             events.append(event)
 
-        guardrail = create_tool_guardrail(
+        guardrail = create_tier1_guardrail(
             constraints={"send_email": {"to": Pattern("*@company.com")}},
             audit_callback=capture_audit,
         )
@@ -1860,7 +1860,7 @@ class TestAgentsSDKIntegration:
     @pytest.mark.asyncio
     async def test_warrant_guardrail_audit_includes_warrant_id(self):
         """Test that Tier 2 guardrail audit includes warrant ID."""
-        from tenuo.openai import create_warrant_guardrail
+        from tenuo.openai import create_tier2_guardrail
 
         events = []
 
@@ -1870,7 +1870,7 @@ class TestAgentsSDKIntegration:
         key = SigningKey.generate()
         warrant = Warrant.mint_builder().capability("send_email", {}).holder(key.public_key).ttl(3600).mint(key)
 
-        guardrail = create_warrant_guardrail(
+        guardrail = create_tier2_guardrail(
             warrant=warrant,
             signing_key=key,
             audit_callback=capture_audit,
@@ -1890,9 +1890,9 @@ class TestAgentsSDKIntegration:
         SECURITY: Malformed JSON must NOT silently pass as empty arguments,
         as that could bypass constraints.
         """
-        from tenuo.openai import create_tool_guardrail
+        from tenuo.openai import create_tier1_guardrail
 
-        guardrail = create_tool_guardrail(constraints={"send_email": {"to": Pattern("*@company.com")}})
+        guardrail = create_tier1_guardrail(constraints={"send_email": {"to": Pattern("*@company.com")}})
 
         # Malformed JSON - missing closing brace
         input_data = [

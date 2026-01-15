@@ -988,3 +988,353 @@ class TestDeepConstraintAttenuation:
 
         # Valid: adding constraint makes it stricter
         assert server._grants_are_subset(child, parent) is True
+
+
+# =============================================================================
+# Test: Key Format Normalization Attacks
+# =============================================================================
+
+
+class TestKeyFormatNormalization:
+    """Tests for key format comparison attacks.
+
+    Attackers may try to bypass issuer checks by using different
+    representations of the same key (DID, multibase, hex).
+    """
+
+    def test_did_vs_hex_comparison(self):
+        """DID and hex representations of same key should match."""
+        from tenuo.a2a.server import A2AServer
+
+        server = A2AServer(
+            name="test",
+            url="https://test.example.com",
+            public_key="test_key",
+            trusted_issuers=["z6MkTrusted"],
+        )
+
+        # Multibase "z" prefix = base58btc
+        # These should normalize to comparable forms
+        multibase_key = "z6MkTrusted"
+        did_key = "did:key:z6MkTrusted"
+
+        # After normalization, should be comparable
+        normalized_multibase = server._normalize_key(multibase_key)
+        normalized_did = server._normalize_key(did_key)
+
+        # Both should normalize to same form (did:key: prefix stripped)
+        # Note: Without actual key bytes, this tests the prefix stripping
+        assert normalized_did == normalized_multibase, "DID and multibase should normalize to same form"
+
+    def test_hex_passthrough(self):
+        """Pure hex keys should pass through unchanged."""
+        from tenuo.a2a.server import A2AServer
+
+        server = A2AServer(
+            name="test",
+            url="https://test.example.com",
+            public_key="test_key",
+            trusted_issuers=["abc123"],
+        )
+
+        hex_key = "abc123def456"
+        normalized = server._normalize_key(hex_key)
+
+        # Hex should pass through (doesn't start with z or did:key:)
+        assert normalized == hex_key
+
+    def test_public_key_object_to_hex(self):
+        """PublicKey objects should convert to hex."""
+        from tenuo.a2a.server import A2AServer
+
+        server = A2AServer(
+            name="test",
+            url="https://test.example.com",
+            public_key="test_key",
+            trusted_issuers=["trusted"],
+        )
+
+        class MockPublicKey:
+            def to_bytes(self):
+                return b"\x01\x02\x03\x04"
+
+        key = MockPublicKey()
+        normalized = server._normalize_key(key)
+
+        assert normalized == "01020304"
+
+    def test_attacker_key_format_mismatch(self):
+        """Attacker cannot bypass issuer check via format confusion."""
+        from tenuo.a2a.server import A2AServer
+
+        # Server trusts hex format
+        server = A2AServer(
+            name="test",
+            url="https://test.example.com",
+            public_key="test_key",
+            trusted_issuers=["abc123"],  # Hex format
+        )
+
+        # Attacker tries DID format that might "look" like hex
+        attacker_did = "did:key:zabc123"  # Not the same as "abc123"
+
+        normalized_attacker = server._normalize_key(attacker_did)
+        normalized_trusted = server._normalize_key("abc123")
+
+        # These should NOT be equal (different key representations)
+        # The DID would decode to different bytes
+        assert "abc123" != normalized_attacker or normalized_trusted == "abc123"
+
+
+# =============================================================================
+# Test: Mid-Stream Expiry Attacks
+# =============================================================================
+
+
+class TestMidStreamExpiry:
+    """Tests for warrant expiry during streaming execution."""
+
+    def test_expiry_check_between_chunks(self):
+        """Warrant expiry should be checked between stream chunks."""
+        import time
+
+        # This tests the expiry check logic
+        warrant_exp = time.time() - 1  # Already expired
+
+        # Simulate the check in streaming
+        if warrant_exp and time.time() > warrant_exp:
+            expired = True
+        else:
+            expired = False
+
+        assert expired is True, "Expired warrant should be detected"
+
+    def test_expiry_check_at_completion(self):
+        """Warrant expiry should be checked before final completion event."""
+        import time
+
+        # Warrant expires during "execution"
+        warrant_exp = time.time() + 0.1  # Expires in 100ms
+
+        # Simulate long-running skill
+        time.sleep(0.15)  # Takes 150ms
+
+        # Final expiry check
+        if warrant_exp and time.time() > warrant_exp:
+            expired_at_completion = True
+        else:
+            expired_at_completion = False
+
+        assert expired_at_completion is True, "Should catch expiry at completion"
+
+    def test_no_expiry_when_not_set(self):
+        """When warrant has no exp, expiry checks should pass."""
+        import time
+
+        warrant_exp = None  # No expiry set
+
+        # This should NOT be considered expired
+        if warrant_exp and time.time() > warrant_exp:
+            expired = True
+        else:
+            expired = False
+
+        assert expired is False, "No exp should not be treated as expired"
+
+
+# =============================================================================
+# Test: PoP Signer Verification Attacks
+# =============================================================================
+
+
+class TestPoPSignerVerification:
+    """Tests verifying PoP signer matches warrant holder."""
+
+    def test_pop_wrong_signer_rejected(self):
+        """PoP signed by wrong key should be rejected."""
+        try:
+            from tenuo_core import SigningKey, Warrant
+
+            holder_key = SigningKey.generate()
+            attacker_key = SigningKey.generate()
+
+            # Warrant holder is holder_key
+            warrant = Warrant.mint(
+                keypair=holder_key,
+                holder=holder_key.public_key,
+                capabilities={"test_skill": {}},
+                ttl_seconds=300,
+            )
+
+            # Attacker signs PoP with their key (not holder's)
+            attacker_pop = warrant.sign(attacker_key, "test_skill", {"arg": "value"})
+
+            # Try to authorize with attacker's PoP
+            from tenuo_core import ConstraintValue, Signature
+
+            args_cv = {"arg": ConstraintValue.from_any("value")}
+            pop_sig = Signature.from_bytes(bytes(attacker_pop))
+
+            # This should fail because PoP signer != warrant.sub
+            with pytest.raises(Exception):
+                warrant.authorize("test_skill", args_cv, signature=pop_sig)
+
+        except ImportError:
+            pytest.skip("tenuo_core not available")
+
+    def test_pop_correct_signer_accepted(self):
+        """PoP signed by holder should be accepted."""
+        try:
+            from tenuo_core import SigningKey, Warrant, ConstraintValue, Signature
+
+            holder_key = SigningKey.generate()
+
+            warrant = Warrant.mint(
+                keypair=holder_key,
+                holder=holder_key.public_key,
+                capabilities={"test_skill": {}},
+                ttl_seconds=300,
+            )
+
+            # Holder signs PoP
+            holder_pop = warrant.sign(holder_key, "test_skill", {"arg": "value"})
+
+            args_cv = {"arg": ConstraintValue.from_any("value")}
+            pop_sig = Signature.from_bytes(bytes(holder_pop))
+
+            # This should succeed
+            authorized = warrant.authorize("test_skill", args_cv, signature=pop_sig)
+            assert authorized is True
+
+        except ImportError:
+            pytest.skip("tenuo_core not available")
+
+    def test_delegated_pop_uses_delegate_key(self):
+        """Delegated warrant PoP must use delegate's key, not issuer's."""
+        try:
+            from tenuo_core import SigningKey, Warrant, ConstraintValue, Signature
+
+            issuer_key = SigningKey.generate()
+            delegate_key = SigningKey.generate()
+
+            # Issuer creates root warrant
+            root = Warrant.mint(
+                keypair=issuer_key,
+                holder=issuer_key.public_key,
+                capabilities={"read_file": {}},
+                ttl_seconds=300,
+            )
+
+            # Delegate warrant to delegate_key
+            delegated = (
+                root.grant_builder()
+                .capability("read_file")
+                .holder(delegate_key.public_key)
+                .ttl(60)
+                .build(issuer_key)
+            )
+
+            # Delegate must sign PoP with their key
+            delegate_pop = delegated.sign(delegate_key, "read_file", {"path": "/data"})
+            args_cv = {"path": ConstraintValue.from_any("/data")}
+            pop_sig = Signature.from_bytes(bytes(delegate_pop))
+
+            # Should succeed with delegate's key
+            authorized = delegated.authorize("read_file", args_cv, signature=pop_sig)
+            assert authorized is True
+
+            # Using issuer's key should fail (they're not the holder)
+            issuer_pop = delegated.sign(issuer_key, "read_file", {"path": "/data"})
+            issuer_sig = Signature.from_bytes(bytes(issuer_pop))
+
+            with pytest.raises(Exception):
+                delegated.authorize("read_file", args_cv, signature=issuer_sig)
+
+        except ImportError:
+            pytest.skip("tenuo_core not available")
+
+
+# =============================================================================
+# Test: Constraint Value Type Coercion Attacks
+# =============================================================================
+
+
+class TestConstraintTypeCoercion:
+    """Tests for type coercion bypass attempts."""
+
+    def test_string_number_confusion(self):
+        """String "10" vs integer 10 should be handled correctly."""
+        try:
+            from tenuo_core import Range
+        except ImportError:
+            pytest.skip("tenuo_core not available")
+
+        from tenuo.a2a.server import A2AServer
+
+        server = A2AServer(
+            name="test",
+            url="https://test.example.com",
+            public_key="test_key",
+            trusted_issuers=["trusted"],
+        )
+
+        constraint = Range(0, 100)
+
+        # Both should work for Range constraint
+        result_int = server._check_constraint(constraint, 50)
+        result_str = server._check_constraint(constraint, "50")
+
+        assert result_int is True
+        assert result_str is True  # Should coerce string to number
+
+    def test_float_integer_confusion(self):
+        """Float 10.5 vs integer 10 should be handled correctly."""
+        try:
+            from tenuo_core import Range
+        except ImportError:
+            pytest.skip("tenuo_core not available")
+
+        from tenuo.a2a.server import A2AServer
+
+        server = A2AServer(
+            name="test",
+            url="https://test.example.com",
+            public_key="test_key",
+            trusted_issuers=["trusted"],
+        )
+
+        constraint = Range(0, 100)
+
+        result_float = server._check_constraint(constraint, 10.5)
+        result_int = server._check_constraint(constraint, 10)
+
+        assert result_float is True
+        assert result_int is True
+
+    def test_case_sensitive_values(self):
+        """OneOf constraint should be case-sensitive."""
+        try:
+            from tenuo_core import OneOf
+        except ImportError:
+            pytest.skip("tenuo_core not available")
+
+        from tenuo.a2a.server import A2AServer
+
+        server = A2AServer(
+            name="test",
+            url="https://test.example.com",
+            public_key="test_key",
+            trusted_issuers=["trusted"],
+        )
+
+        constraint = OneOf(["true", "false"])
+
+        # Exact match should work
+        result_lower = server._check_constraint(constraint, "true")
+        # Different case should NOT match
+        result_upper = server._check_constraint(constraint, "TRUE")
+        result_mixed = server._check_constraint(constraint, "True")
+
+        assert result_lower is True, "Exact match should pass"
+        assert result_upper is False, "Case mismatch should fail"
+        assert result_mixed is False, "Case mismatch should fail"

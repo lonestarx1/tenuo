@@ -67,7 +67,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Two-tier protection**: Tier 1 (runtime guardrails) and Tier 2 (warrant + PoP)
 - **Streaming TOCTOU protection**: Buffer-verify-emit pattern prevents timing attacks
 - **Responses API support**: `client.responses.create()` with guardrails
-- **OpenAI Agents SDK integration**: `create_tool_guardrail()`, `create_warrant_guardrail()`
+- **OpenAI Agents SDK integration**: `create_tier1_guardrail()`, `create_tier2_guardrail()`
 - **Tool schema validation**: Warns on typos in constraint parameter names
 
 #### New Constraints

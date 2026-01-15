@@ -16,6 +16,51 @@ if TYPE_CHECKING:
 
 
 # =============================================================================
+# Internal Helpers
+# =============================================================================
+
+
+def _suggest_similar(name: str, candidates: List[str], threshold: int = 3) -> Optional[str]:
+    """
+    Suggest a similar name from candidates using edit distance.
+
+    Returns the closest match if edit distance <= threshold, else None.
+    """
+    if not candidates:
+        return None
+
+    def edit_distance(s1: str, s2: str) -> int:
+        """Simple Levenshtein distance."""
+        if len(s1) < len(s2):
+            s1, s2 = s2, s1
+        if len(s2) == 0:
+            return len(s1)
+
+        prev_row = list(range(len(s2) + 1))
+        for i, c1 in enumerate(s1):
+            curr_row = [i + 1]
+            for j, c2 in enumerate(s2):
+                insertions = prev_row[j + 1] + 1
+                deletions = curr_row[j] + 1
+                substitutions = prev_row[j] + (c1 != c2)
+                curr_row.append(min(insertions, deletions, substitutions))
+            prev_row = curr_row
+
+        return prev_row[-1]
+
+    best_match = None
+    best_distance = threshold + 1
+
+    for candidate in candidates:
+        dist = edit_distance(name.lower(), candidate.lower())
+        if dist < best_distance:
+            best_distance = dist
+            best_match = candidate
+
+    return best_match if best_distance <= threshold else None
+
+
+# =============================================================================
 # chain_callbacks - Compose multiple ADK callbacks
 # =============================================================================
 
@@ -25,6 +70,7 @@ def chain_callbacks(*callbacks: Callable) -> Callable:
     Chain multiple before_tool_callbacks. First non-None return wins.
 
     ADK only allows one callback per hook. This utility lets you compose multiple.
+    Supports both sync and async callbacks.
 
     Usage:
         from tenuo.google_adk import TenuoGuard, chain_callbacks
@@ -42,19 +88,42 @@ def chain_callbacks(*callbacks: Callable) -> Callable:
 
     Args:
         *callbacks: Functions with signature (tool, args, tool_context) -> Optional[Dict]
+                   Can be sync or async functions.
 
     Returns:
-        Combined callback that runs each in order, short-circuiting on first denial
+        Combined callback that runs each in order, short-circuiting on first denial.
+        Returns async function if any callback is async.
     """
+    import inspect
 
-    def chained(tool: Any, args: Dict[str, Any], tool_context: Any) -> Optional[Dict[str, Any]]:
-        for cb in callbacks:
-            result = cb(tool, args, tool_context)
-            if result is not None:
-                return result  # Short-circuit on first denial
-        return None
+    # Check if any callback is async
+    has_async = any(inspect.iscoroutinefunction(cb) for cb in callbacks)
 
-    return chained
+    if has_async:
+        async def chained_async(
+            tool: Any, args: Dict[str, Any], tool_context: Any
+        ) -> Optional[Dict[str, Any]]:
+            for cb in callbacks:
+                if inspect.iscoroutinefunction(cb):
+                    result = await cb(tool, args, tool_context)
+                else:
+                    result = cb(tool, args, tool_context)
+                if result is not None:
+                    return result  # Short-circuit on first denial
+            return None
+
+        return chained_async
+    else:
+        def chained_sync(
+            tool: Any, args: Dict[str, Any], tool_context: Any
+        ) -> Optional[Dict[str, Any]]:
+            for cb in callbacks:
+                result = cb(tool, args, tool_context)
+                if result is not None:
+                    return result  # Short-circuit on first denial
+            return None
+
+        return chained_sync
 
 
 # =============================================================================
@@ -478,7 +547,12 @@ def generate_hints(
         granted.extend(tools_attr)
 
         if granted and tool_name not in granted:
-            hints.append(f"Granted tools: {granted[:5]}")
+            hints.append(f"Warrant has skills: {granted[:5]}")
+            # Try to suggest similar skill name
+            suggestion = _suggest_similar(tool_name, granted)
+            if suggestion:
+                hints.append(f"Did you mean '{suggestion}'?")
+                hints.append(f"Fix: .map_skill(\"{tool_name}\", \"{suggestion}\")")
         elif not granted:
             hints.append("Warrant has no tools granted")
 

@@ -172,7 +172,7 @@ class TenuoPlugin(BasePlugin):
                 logger.warning(
                     f"Removing warrant scoped for '{scoped_warrant.agent_name}' from agent '{callback_context.agent_name}'"
                 )
-                # Use pop() instead of del for thread safety (atomic removal)
+                # Use pop() to avoid KeyError if already removed
                 state.pop(self._warrant_key, None)
                 return None  # Will fail in before_tool with "no warrant"
 
@@ -180,7 +180,7 @@ class TenuoPlugin(BasePlugin):
         warrant = getattr(scoped_warrant, "warrant", scoped_warrant)
         is_expired = self._check_warrant_expiry(warrant)
         if is_expired:
-            # Use pop() for thread safety (atomic removal)
+            # Use pop() to avoid KeyError if already removed
             state.pop(self._warrant_key, None)
 
         return None  # Continue with agent execution

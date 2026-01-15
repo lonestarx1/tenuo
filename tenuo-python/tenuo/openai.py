@@ -69,9 +69,9 @@ OpenAI Agents SDK Integration:
     Tenuo integrates with the OpenAI Agents SDK (openai-agents) via guardrails:
 
     from agents import Agent
-    from tenuo.openai import create_tool_guardrail, Pattern
+    from tenuo.openai import create_tier1_guardrail, Pattern
 
-    guardrail = create_tool_guardrail(
+    guardrail = create_tier1_guardrail(
         constraints={"send_email": {"to": Pattern("*@company.com")}}
     )
 
@@ -80,7 +80,7 @@ OpenAI Agents SDK Integration:
         input_guardrails=[guardrail],  # Validates tool calls before execution
     )
 
-    For Tier 2 (warrant-based), use create_warrant_guardrail().
+    For Tier 2 (warrant-based), use create_tier2_guardrail().
 """
 
 from __future__ import annotations
@@ -2081,9 +2081,9 @@ def guard(
 # multi-agent systems. Tenuo integrates via the guardrails mechanism:
 #
 #   from agents import Agent, Runner
-#   from tenuo.openai import create_tool_guardrail, Pattern
+#   from tenuo.openai import create_tier1_guardrail, Pattern
 #
-#   guardrail = create_tool_guardrail(
+#   guardrail = create_tier1_guardrail(
 #       constraints={"send_email": {"to": Pattern("*@company.com")}}
 #   )
 #
@@ -2093,12 +2093,12 @@ def guard(
 #       input_guardrails=[guardrail],  # Validates tool calls before execution
 #   )
 #
-# For Tier 2 (warrant-based), use create_warrant_guardrail():
+# For Tier 2 (warrant-based), use create_tier2_guardrail():
 #
-#   from tenuo.openai import create_warrant_guardrail
+#   from tenuo.openai import create_tier2_guardrail
 #   from tenuo import SigningKey, Warrant
 #
-#   guardrail = create_warrant_guardrail(warrant=warrant, signing_key=agent_key)
+#   guardrail = create_tier2_guardrail(warrant=warrant, signing_key=agent_key)
 #   agent = Agent(..., input_guardrails=[guardrail])
 
 
@@ -2385,7 +2385,7 @@ class TenuoToolGuardrail:
         return None
 
 
-def create_tool_guardrail(
+def create_tier1_guardrail(
     *,
     allow_tools: Optional[List[str]] = None,
     deny_tools: Optional[List[str]] = None,
@@ -2410,9 +2410,9 @@ def create_tool_guardrail(
 
     Example:
         from agents import Agent
-        from tenuo.openai import create_tool_guardrail, Pattern
+        from tenuo.openai import create_tier1_guardrail, Pattern
 
-        guardrail = create_tool_guardrail(
+        guardrail = create_tier1_guardrail(
             constraints={
                 "send_email": {"to": Pattern("*@company.com")},
                 "read_file": {"path": Pattern("/data/*")},
@@ -2433,7 +2433,7 @@ def create_tool_guardrail(
     )
 
 
-def create_warrant_guardrail(
+def create_tier2_guardrail(
     *,
     warrant: Warrant,
     signing_key: SigningKey,
@@ -2457,7 +2457,7 @@ def create_warrant_guardrail(
 
     Example:
         from agents import Agent, Runner
-        from tenuo.openai import create_warrant_guardrail
+        from tenuo.openai import create_tier2_guardrail
         from tenuo import SigningKey, Warrant, Pattern
 
         # Control plane issues warrant to agent
@@ -2471,7 +2471,7 @@ def create_warrant_guardrail(
             .mint(control_key))
 
         # Agent uses warrant
-        guardrail = create_warrant_guardrail(
+        guardrail = create_tier2_guardrail(
             warrant=warrant,
             signing_key=agent_key,
         )
@@ -2506,8 +2506,8 @@ __all__ = [
     # OpenAI Agents SDK Integration
     "TenuoToolGuardrail",
     "GuardrailResult",
-    "create_tool_guardrail",
-    "create_warrant_guardrail",
+    "create_tier1_guardrail",
+    "create_tier2_guardrail",
     # Audit
     "AuditEvent",
     "AuditCallback",

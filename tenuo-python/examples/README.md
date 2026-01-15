@@ -76,7 +76,8 @@ This demo shows what Tenuo does that **if-statements CAN'T**:
 ### OpenAI Integration
 - **[openai_guardrails.py](openai_guardrails.py)**: **Tier 1 Protection** - Direct OpenAI API wrapping with `guard()` and `GuardBuilder`. Shows constraint types, denial modes, streaming protection, and audit logging. Demonstrates `Subpath` for path traversal protection.
 - **[openai_warrant.py](openai_warrant.py)**: **Tier 2 Protection** - Full cryptographic authorization with warrants and Proof-of-Possession. Shows key separation, constraint enforcement, and `client.validate()`.
-- **[openai_agents_sdk.py](openai_agents_sdk.py)**: **Agents SDK Integration** - Using Tenuo guardrails with OpenAI's Agents SDK. Shows `create_tool_guardrail()` and `create_warrant_guardrail()`.
+- **[openai_async.py](openai_async.py)**: **Async Patterns** - Async client wrapping, streaming with TOCTOU protection, concurrent calls, and async error handling.
+- **[openai_agents_sdk.py](openai_agents_sdk.py)**: **Agents SDK Integration** - Using Tenuo guardrails with OpenAI's Agents SDK. Shows `create_tier1_guardrail()` and `create_tier2_guardrail()`.
 
 **Security Constraints:**
 - `Subpath("/data")` - Blocks path traversal attacks (normalizes `../` before checking containment)

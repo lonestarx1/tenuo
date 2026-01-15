@@ -2897,3 +2897,224 @@ class TestConstraintMethodNames:
 
         assert fnmatch.fnmatch("file.txt", constraint.pattern)
         assert not fnmatch.fnmatch("file.py", constraint.pattern)
+
+
+# =============================================================================
+# Builder Tests
+# =============================================================================
+
+
+class TestA2AServerBuilder:
+    """Tests for A2AServerBuilder fluent API."""
+
+    def test_builder_basic(self, mock_key, trusted_issuer):
+        """Builder creates server with required fields."""
+        from tenuo.a2a import A2AServerBuilder
+
+        server = (
+            A2AServerBuilder()
+            .name("Test Agent")
+            .url("https://test.example.com")
+            .public_key(mock_key)
+            .trust(trusted_issuer)
+            .build()
+        )
+
+        assert server.name == "Test Agent"
+        assert server.url == "https://test.example.com"
+        assert server.public_key == mock_key
+
+    def test_builder_key_extracts_public_key(self):
+        """Builder .key() extracts public_key from SigningKey."""
+        from tenuo.a2a import A2AServerBuilder
+
+        class MockSigningKey:
+            public_key = "mock_public_key_123"
+
+        server = (
+            A2AServerBuilder()
+            .name("Test")
+            .url("https://test.example.com")
+            .key(MockSigningKey())
+            .trust("issuer")
+            .build()
+        )
+
+        assert server.public_key == "mock_public_key_123"
+
+    def test_builder_multiple_trusts(self, mock_key):
+        """Builder .trust() can be called multiple times."""
+        from tenuo.a2a import A2AServerBuilder
+
+        server = (
+            A2AServerBuilder()
+            .name("Test")
+            .url("https://test.example.com")
+            .public_key(mock_key)
+            .trust("issuer1")
+            .trust("issuer2", "issuer3")
+            .build()
+        )
+
+        assert len(server.trusted_issuers) == 3
+
+    def test_builder_all_options(self, mock_key, trusted_issuer):
+        """Builder supports all configuration options."""
+        from tenuo.a2a import A2AServerBuilder
+
+        server = (
+            A2AServerBuilder()
+            .name("Full Config Agent")
+            .url("https://test.example.com")
+            .public_key(mock_key)
+            .trust(trusted_issuer)
+            .trust_delegated(False)
+            .require_warrant(True)
+            .require_audience(True)
+            .require_pop(True)
+            .check_replay(True)
+            .replay_window(7200)
+            .max_chain_depth(5)
+            .build()
+        )
+
+        assert server.trust_delegated is False
+        assert server.require_warrant is True
+        assert server.require_pop is True
+        assert server.replay_window == 7200
+        assert server.max_chain_depth == 5
+
+    def test_builder_missing_name_raises(self, mock_key, trusted_issuer):
+        """Builder raises if name is missing."""
+        from tenuo.a2a import A2AServerBuilder
+
+        with pytest.raises(ValueError, match="requires .name()"):
+            A2AServerBuilder().url("https://test.example.com").public_key(mock_key).trust(trusted_issuer).build()
+
+    def test_builder_missing_url_raises(self, mock_key, trusted_issuer):
+        """Builder raises if url is missing."""
+        from tenuo.a2a import A2AServerBuilder
+
+        with pytest.raises(ValueError, match="requires .url()"):
+            A2AServerBuilder().name("Test").public_key(mock_key).trust(trusted_issuer).build()
+
+    def test_builder_missing_key_raises(self, trusted_issuer):
+        """Builder raises if key is missing."""
+        from tenuo.a2a import A2AServerBuilder
+
+        with pytest.raises(ValueError, match="requires .key()"):
+            A2AServerBuilder().name("Test").url("https://test.example.com").trust(trusted_issuer).build()
+
+    def test_builder_missing_trust_raises(self, mock_key):
+        """Builder raises if no trusted issuers."""
+        from tenuo.a2a import A2AServerBuilder
+
+        with pytest.raises(ValueError, match="requires at least one .trust()"):
+            A2AServerBuilder().name("Test").url("https://test.example.com").public_key(mock_key).build()
+
+
+class TestA2AClientBuilder:
+    """Tests for A2AClientBuilder fluent API."""
+
+    def test_builder_basic(self):
+        """Builder creates client with required fields."""
+        from tenuo.a2a import A2AClientBuilder
+
+        client = A2AClientBuilder().url("https://agent.example.com").build()
+
+        assert client.url == "https://agent.example.com"
+        assert client.timeout == 30.0
+
+    def test_builder_all_options(self):
+        """Builder supports all configuration options."""
+        from tenuo.a2a import A2AClientBuilder
+
+        client = (
+            A2AClientBuilder()
+            .url("https://agent.example.com")
+            .pin_key("expected_key_hex")
+            .timeout(60.0)
+            .build()
+        )
+
+        assert client.url == "https://agent.example.com"
+        assert client.pin_key == "expected_key_hex"
+        assert client.timeout == 60.0
+
+    def test_builder_with_warrant(self):
+        """Builder can configure default warrant."""
+        from tenuo.a2a import A2AClientBuilder
+
+        class MockWarrant:
+            pass
+
+        class MockSigningKey:
+            pass
+
+        warrant = MockWarrant()
+        key = MockSigningKey()
+
+        client = (
+            A2AClientBuilder()
+            .url("https://agent.example.com")
+            .warrant(warrant, key)
+            .build()
+        )
+
+        assert client._default_warrant is warrant
+        assert client._default_signing_key is key
+
+    def test_builder_missing_url_raises(self):
+        """Builder raises if url is missing."""
+        from tenuo.a2a import A2AClientBuilder
+
+        with pytest.raises(ValueError, match="requires .url()"):
+            A2AClientBuilder().build()
+
+    def test_builder_pin_key_from_object(self):
+        """Builder .pin_key() handles key objects."""
+        from tenuo.a2a import A2AClientBuilder
+
+        class MockPublicKey:
+            def to_bytes(self):
+                return b"\x01\x02\x03\x04"
+
+        client = (
+            A2AClientBuilder()
+            .url("https://agent.example.com")
+            .pin_key(MockPublicKey())
+            .build()
+        )
+
+        assert client.pin_key == "01020304"
+
+    @pytest.mark.asyncio
+    async def test_send_task_uses_default_warrant(self):
+        """send_task() uses default warrant if not provided."""
+        from tenuo.a2a import A2AClientBuilder
+
+        class MockWarrant:
+            def to_base64(self):
+                return "mock_warrant_token"
+
+        warrant = MockWarrant()
+
+        client = (
+            A2AClientBuilder()
+            .url("https://agent.example.com")
+            .warrant(warrant, None)
+            .build()
+        )
+
+        # The warrant should be set
+        assert client._default_warrant is warrant
+
+    @pytest.mark.asyncio
+    async def test_send_task_requires_warrant(self):
+        """send_task() raises if no warrant provided and no default."""
+        from tenuo.a2a import A2AClientBuilder
+
+        client = A2AClientBuilder().url("https://agent.example.com").build()
+
+        with pytest.raises(ValueError, match="warrant is required"):
+            await client.send_task("Do something", skill="test")
