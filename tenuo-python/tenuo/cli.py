@@ -802,7 +802,7 @@ def doctor(verbose: bool = False) -> None:
     print("\n🔌 Framework Integrations:")
 
     try:
-        import openai
+        import openai  # type: ignore[import-not-found]
 
         print(f"  ✅ OpenAI: v{openai.__version__}")
         try:
@@ -815,7 +815,7 @@ def doctor(verbose: bool = False) -> None:
         print("  ⚠️  OpenAI: not installed (pip install openai)")
 
     try:
-        import langchain
+        import langchain  # type: ignore[import-not-found]
 
         print(f"  ✅ LangChain: v{langchain.__version__}")
     except ImportError:
