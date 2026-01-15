@@ -4629,7 +4629,7 @@ mod tests {
         //   - Explicit domains: UrlPattern("https://*.example.com/*")
         //   - UrlSafe() for SSRF-protected URL matching
         let pattern = UrlPattern::new("https://*/*").unwrap();
-        
+
         // The parser sets host_pattern incorrectly due to replacement order,
         // but this is actually a security feature - bare wildcard hosts should not match.
         assert!(!pattern.matches_url("https://example.com/path").unwrap());
