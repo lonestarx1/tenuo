@@ -39,7 +39,7 @@ try:
     from google.adk.plugins import BasePlugin  # type: ignore[import-not-found]
 except ImportError:
     # Allow import even if google-adk not installed (for type checking)
-    BasePlugin = object  # type: ignore[misc]
+    BasePlugin = object  # type: ignore[misc,assignment]
 
 if TYPE_CHECKING:
     from google.adk.tools.tool_context import ToolContext  # type: ignore[import-not-found]
@@ -136,9 +136,10 @@ class TenuoPlugin(BasePlugin):
         )
         self._warrant_key = warrant_key
 
-    def before_agent_callback(
+    def before_agent_callback(  # type: ignore[override]
         self,
         callback_context: "CallbackContext",
+        **kwargs: Any,  # Accept additional kwargs for API compatibility
     ) -> Optional[Any]:
         """
         Validate warrant scope at turn boundary.
@@ -172,7 +173,7 @@ class TenuoPlugin(BasePlugin):
                 logger.warning(
                     f"Removing warrant scoped for '{scoped_warrant.agent_name}' from agent '{callback_context.agent_name}'"
                 )
-                # Use pop() instead of del for thread safety (atomic removal)
+                # Use pop() to avoid KeyError if already removed
                 state.pop(self._warrant_key, None)
                 return None  # Will fail in before_tool with "no warrant"
 
@@ -180,7 +181,7 @@ class TenuoPlugin(BasePlugin):
         warrant = getattr(scoped_warrant, "warrant", scoped_warrant)
         is_expired = self._check_warrant_expiry(warrant)
         if is_expired:
-            # Use pop() for thread safety (atomic removal)
+            # Use pop() to avoid KeyError if already removed
             state.pop(self._warrant_key, None)
 
         return None  # Continue with agent execution
@@ -202,21 +203,23 @@ class TenuoPlugin(BasePlugin):
 
         return False
 
-    def before_tool_callback(
+    def before_tool_callback(  # type: ignore[override]
         self,
         tool: "BaseTool",
         args: Dict[str, Any],
         tool_context: "ToolContext",
+        **kwargs: Any,  # Accept additional kwargs for API compatibility
     ) -> Optional[Dict[str, Any]]:
         """Plugin hook - called for all tool invocations."""
         return self._guard.before_tool(tool, args, tool_context)
 
-    def after_tool_callback(
+    def after_tool_callback(  # type: ignore[override]
         self,
         tool: "BaseTool",
         args: Dict[str, Any],
         tool_context: "ToolContext",
         result: Any,
+        **kwargs: Any,  # Accept additional kwargs for API compatibility
     ) -> Optional[Any]:
         """Plugin hook - called after all tool invocations."""
         return self._guard.after_tool(tool, args, tool_context, result)

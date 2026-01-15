@@ -57,6 +57,11 @@ from tenuo_core import (  # type: ignore
     UrlPattern,
     Regex,
     CEL,
+    # Protocol constants
+    MAX_DELEGATION_DEPTH,
+    MAX_WARRANT_TTL_SECS,
+    DEFAULT_WARRANT_TTL_SECS,
+    MAX_WARRANT_SIZE,
 )
 
 # Semantic alias: Any() = Wildcard() for zero-trust constraint sets
@@ -203,6 +208,11 @@ __all__ = [
     "UrlPattern",  # URL matching
     "Regex",  # Regular expression
     "CEL",  # Common Expression Language
+    # Protocol constants
+    "MAX_DELEGATION_DEPTH",
+    "MAX_WARRANT_TTL_SECS",
+    "DEFAULT_WARRANT_TTL_SECS",
+    "MAX_WARRANT_SIZE",
     # Python-only security constraints
     "Subpath",  # Secure path containment (path traversal protection)
     "UrlSafe",  # SSRF protection (IP/domain blocking)
@@ -233,4 +243,4 @@ __all__ = [
     "Keyring",
 ]
 
-__version__ = "0.1.0b5"
+__version__ = "0.1.0b6"

@@ -8,7 +8,49 @@ This directory contains working examples demonstrating how to use the Tenuo Pyth
 pip install tenuo
 ```
 
-## 🚀 Featured Demo: Research Agent with Guardrails
+## Quick Start
+
+**OpenAI** - Semantic constraints that block attacks:
+```python
+from openai import OpenAI
+from tenuo.openai import GuardBuilder
+from tenuo.constraints import Subpath, UrlSafe
+
+client = (GuardBuilder(OpenAI())
+    .allow("read_file", path=Subpath("/data"))  # Blocks path traversal
+    .allow("fetch", url=UrlSafe())              # Blocks SSRF attacks
+    .build())
+```
+
+**Google ADK** - Same semantic protection:
+```python
+from tenuo.google_adk import GuardBuilder
+from tenuo.constraints import Subpath
+
+guard = (GuardBuilder()
+    .allow("read_file", path=Subpath("/data"))
+    .build())
+
+agent = Agent(tools=[...], before_tool_callback=guard.before_tool)
+```
+
+**A2A (Multi-Agent)** - Warrant-based delegation:
+```python
+from tenuo.a2a import A2AServerBuilder
+
+server = (A2AServerBuilder()
+    .name("Worker")
+    .url("https://worker.example.com")
+    .key(my_key)
+    .accept_warrants_from(orchestrator_key)
+    .build())
+```
+
+> **Simple Allowlist?** Use `protect(client, tools=[...])` for basic protection without constraints.
+
+---
+
+## Featured Demo: Research Agent with Guardrails
 
 **The best way to see Tenuo in action — works in dry-run mode OR with real OpenAI!**
 
@@ -31,15 +73,15 @@ export TAVILY_API_KEY="tvly-..."  # Free tier: https://tavily.com
 python research_agent_demo.py
 ```
 
-This demo shows what Tenuo does that **if-statements CAN'T**:
-- 🔗 **Delegation chains**: Control Plane → Orchestrator → Worker
-- 📉 **Attenuation**: Each hop narrows capabilities (can't exceed parent)
-- 🔐 **Cryptographic audit**: Signed proof of every action
-- 👥 **Multi-agent separation**: Different workers get different capabilities
-- 🛡️ **Prompt injection defense**: Warrant blocks unauthorized actions
-- ⏱️ **Multi-mission isolation**: Same worker, different mission warrants
-- 🤖 **Real LLM integration**: OpenAI GPT with warrant-protected tools (or dry-run)
-- 📦 **High-level templates**: `FileReader`, `WebSearcher`, `DatabaseReader` for easy adoption
+This demo shows Tenuo's key capabilities:
+- **Delegation chains**: Control Plane -> Orchestrator -> Worker
+- **Attenuation**: Each hop narrows capabilities (can't exceed parent)
+- **Cryptographic audit**: Signed proof of every action
+- **Multi-agent separation**: Different workers get different capabilities
+- **Prompt injection defense**: Warrant blocks unauthorized actions
+- **Multi-mission isolation**: Same worker, different mission warrants
+- **Real LLM integration**: OpenAI GPT with warrant-protected tools (or dry-run)
+- **High-level templates**: `FileReader`, `WebSearcher`, `DatabaseReader` for easy adoption
 
 ---
 
@@ -57,7 +99,7 @@ This demo shows what Tenuo does that **if-statements CAN'T**:
 - **[orchestrator_worker.py](orchestrator_worker.py)**: **Core delegation pattern** - Shows how orchestrators attenuate warrants for workers. Demonstrates Tenuo's key value: authority that shrinks as it flows through the system. Essential for understanding multi-agent workflows.
 
 ### MCP Integration
-- **[research_agent_demo.py](research_agent_demo.py)**: 🚀 **RUNNABLE DEMO** - Pure Python MCP demo showing what Tenuo does that if-statements CAN'T. Uses mock or real Tavily search. **Best first demo!**
+- **[research_agent_demo.py](research_agent_demo.py)**: **RUNNABLE DEMO** - Pure Python MCP demo with delegation chains, attenuation, and cryptographic audit. Uses mock or real Tavily search. **Best first demo!**
 - **[mcp_research_server.py](mcp_research_server.py)**: The MCP server used by `research_agent_demo.py`. Demonstrates `web_search`, `write_file`, `read_file` tools.
 
 ### LangChain Integration
@@ -76,7 +118,15 @@ This demo shows what Tenuo does that **if-statements CAN'T**:
 ### OpenAI Integration
 - **[openai_guardrails.py](openai_guardrails.py)**: **Tier 1 Protection** - Direct OpenAI API wrapping with `guard()` and `GuardBuilder`. Shows constraint types, denial modes, streaming protection, and audit logging. Demonstrates `Subpath` for path traversal protection.
 - **[openai_warrant.py](openai_warrant.py)**: **Tier 2 Protection** - Full cryptographic authorization with warrants and Proof-of-Possession. Shows key separation, constraint enforcement, and `client.validate()`.
-- **[openai_agents_sdk.py](openai_agents_sdk.py)**: **Agents SDK Integration** - Using Tenuo guardrails with OpenAI's Agents SDK. Shows `create_tool_guardrail()` and `create_warrant_guardrail()`.
+- **[openai_async.py](openai_async.py)**: **Async Patterns** - Async client wrapping, streaming with TOCTOU protection, concurrent calls, and async error handling.
+- **[openai_agents_sdk.py](openai_agents_sdk.py)**: **Agents SDK Integration** - Using Tenuo guardrails with OpenAI's Agents SDK. Shows `create_tier1_guardrail()` and `create_tier2_guardrail()`.
+
+### Google ADK Integration
+- **[google_adk_incident_response/](google_adk_incident_response/)**: **Multi-Agent Security Demo** - Detector, Analyst, and Responder agents with warrant-based authorization. Shows Tier 2 protection with monotonic attenuation.
+- **[google_adk_a2a_incident/](google_adk_a2a_incident/)**: **Distributed A2A Demo** - Same incident response scenario but with real A2A HTTP calls between separate agent processes. Shows warrant delegation over the network.
+
+### A2A (Agent-to-Agent) Integration
+- **[a2a_demo.py](a2a_demo.py)**: **Research Pipeline Demo** - Multi-agent delegation with warrant-based authorization. Shows User -> Orchestrator -> Worker flow with constraint attenuation and attack scenarios.
 
 **Security Constraints:**
 - `Subpath("/data")` - Blocks path traversal attacks (normalizes `../` before checking containment)
@@ -120,7 +170,7 @@ python context_pattern.py
 # Multi-agent delegation (core pattern)
 python orchestrator_worker.py
 
-# 🚀 Featured MCP demo (requires: pip install "tenuo[mcp,langchain]" langchain-openai langgraph)
+# Featured MCP demo (requires: pip install "tenuo[mcp,langchain]" langchain-openai langgraph)
 # Also requires: OPENAI_API_KEY (TAVILY_API_KEY optional for real search)
 python research_agent_demo.py
 
@@ -138,6 +188,12 @@ python langgraph_protected.py
 python openai_guardrails.py     # Tier 1: runtime guardrails
 python openai_warrant.py        # Tier 2: cryptographic authorization
 python openai_agents_sdk.py     # Agents SDK integration
+
+# Google ADK examples (requires: pip install tenuo[adk])
+python google_adk_incident_response/demo.py  # Multi-agent incident response
+
+# A2A examples (requires: pip install tenuo[a2a])
+python a2a_demo.py              # Research pipeline with delegation
 
 # MCP example (uses local config file, no external server needed)
 python mcp_integration.py
@@ -164,7 +220,7 @@ python kubernetes_integration.py
 ## Learning Path
 
 **New to Tenuo?** Start here:
-1. 🚀 `research_agent_demo.py` - **Best first demo!** Real OpenAI + web search with guardrails
+1. `research_agent_demo.py` - **Best first demo!** Real OpenAI + web search with guardrails
 2. `basic_usage.py` - Core concepts (warrants, constraints, attenuation, POLA)
 3. `clearance_demo.py` - Clearance level enforcement
 4. `decorator_example.py` - Simplest protection pattern

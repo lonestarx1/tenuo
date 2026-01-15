@@ -1,45 +1,58 @@
 """
 Universal security constraints for Tenuo.
 
-These are security primitives that apply across all integrations:
-- OpenAI, Anthropic, LangChain, or raw Python scripts.
+**What are constraints?**
+Constraints define WHAT values are allowed for tool arguments.
+They're the core security building blocks across all Tenuo integrations.
 
-Architecture:
-    The constraint LOGIC is implemented in Rust (tenuo-core) for:
-    - Cross-language consistency (Go, Node, Python all validate identically)
-    - Performance (IP parsing, URL normalization)
-    - Serializable constraints that can be embedded in Warrants
+**Common Constraints:**
 
-    Python provides the CONTEXT-GATHERING layer:
-    - Symlink resolution before calling Subpath (optional)
-    - DNS pinning before calling UrlSafe (optional)
+    Subpath("/data")
+        Only allow paths under /data/. Blocks path traversal attacks.
+        Example: /data/file.txt OK, /etc/passwd BLOCKED
 
-    This separation follows "Logic vs I/O":
-    - Rust: Pure, deterministic, stateless validation
-    - Python: Environment-dependent I/O and policy decisions
+    UrlSafe(allow_domains=["api.github.com"])
+        Only allow URLs to specific domains. Blocks SSRF attacks.
+        Example: https://api.github.com OK, http://localhost BLOCKED
 
-Usage:
+    Pattern("*.txt")
+        Allow values matching a glob pattern.
+        Example: report.txt OK, config.yaml BLOCKED
+
+    OneOf(["low", "medium", "high"])
+        Allow only specific values.
+        Example: "medium" OK, "critical" BLOCKED
+
+    Range(0, 100)
+        Allow numbers in a range.
+        Example: 50 OK, 150 BLOCKED
+
+    Shlex(allow=["ls", "cat"])
+        Allow only safe shell commands. Blocks injection.
+        Example: "ls -la" OK, "rm -rf /" BLOCKED
+
+**Quick Start:**
+    from tenuo.constraints import Subpath, UrlSafe
+
+    # Path containment
+    path = Subpath("/data")
+    path.contains("/data/file.txt")      # True
+    path.contains("/data/../etc/passwd") # False (traversal blocked)
+
+    # SSRF protection
+    url = UrlSafe()
+    url.is_safe("https://api.github.com/")  # True
+    url.is_safe("http://169.254.169.254/")  # False (metadata blocked)
+
+**Usage:**
     # Direct import (recommended)
     from tenuo.constraints import Subpath, UrlSafe
 
     # Or via main package
     from tenuo import Subpath, UrlSafe
 
-    # Or via adapter (convenience for adapter users)
+    # Or via adapter (convenience)
     from tenuo.openai import Subpath, UrlSafe
-
-Example:
-    from tenuo.constraints import Subpath, UrlSafe
-
-    # Path containment (blocks traversal attacks)
-    path_constraint = Subpath("/data")
-    path_constraint.contains("/data/file.txt")      # True
-    path_constraint.contains("/data/../etc/passwd") # False
-
-    # SSRF protection (blocks internal IPs, metadata endpoints)
-    url_constraint = UrlSafe()
-    url_constraint.is_safe("https://api.github.com/")  # True
-    url_constraint.is_safe("http://169.254.169.254/")  # False
 """
 
 import logging

@@ -16,7 +16,8 @@ category: Deep Dive
 |-------------|-------------------|---------------|
 | Python SDK | `inspect.signature().bind()` | Automatic or `extract_args` |
 | LangChain | Same as Python SDK | `@guard` or `guard()` |
-| LangGraph | Tool-level (not node-level) | `@guard` on tools |
+| LangGraph | Same as Python SDK | `warrant_scope()` + `@guard` |
+| A2A | Server-side via `skill()` | Automatic from function signature |
 | Gateway | YAML config | `from: path/query/body/header/literal` |
 | MCP | YAML config | Same as Gateway |
 
@@ -148,32 +149,33 @@ protected = guard_tools([DuckDuckGoSearchRun()])
 
 ---
 
-## LangGraph Integration (`@tenuo_node`)
+## LangGraph Integration
 
-LangGraph nodes use `@tenuo_node` which wraps `grant()`. Argument extraction happens at the **tool level**, not the node level.
+LangGraph uses context managers (`warrant_scope`, `key_scope`) to scope warrants per node. Extraction happens at the **tool level**.
 
 ```python
-from tenuo.langgraph import tenuo_node
-from tenuo import guard
+from tenuo import guard, warrant_scope, key_scope
 
 @guard(tool="search")
 def search(query: str):
+    # Automatic extraction: {query: "..."}
     ...
 
-@tenuo_node(Capability("search"), query="*public*")
-async def researcher(state):
-    # Node scope enforces: only "search" tool, query must match "*public*"
-    results = await search(state["query"])  # ← Extraction happens HERE
+async def researcher(state, warrant, signing_key):
+    # Narrow warrant scope for this node
+    node_warrant = warrant.grant_builder()
+        .capability("search", query=Pattern("*public*"))
+        .grant(signing_key)
+    
+    with warrant_scope(node_warrant), key_scope(signing_key):
+        results = await search(state["query"])  # ← Extraction here
     return {"results": results}
 ```
 
 **How it works:**
-1. `@tenuo_node` narrows warrant scope (tools + constraints)
-2. When `search()` is called, `@guard` extracts `{query: state["query"]}`
-3. Authorization checks against narrowed warrant
-4. Node constraints (e.g., `query="*public*"`) are checked by `grant()`
-
-**Key insight:** `@tenuo_node` doesn't extract arguments—it creates a scoped warrant. The underlying tool's `@guard` decorator does the extraction.
+1. `warrant_scope()` sets active warrant for the context
+2. Tool's `@guard` extracts arguments automatically
+3. Authorization checks against scoped warrant
 
 ---
 
@@ -550,7 +552,7 @@ def test_extraction():
     def func(a: int, b: int = 2):
         return f"a={a}, b={b}"
     
-    with warrant_scope(w), key_scope(kp):
+    with warrant_scope(w), key_scope(key):
         # Test default inclusion
         result = func(1)  # Should pass (a=1, b=2 extracted)
         assert result == "a=1, b=2"
@@ -648,6 +650,26 @@ pub fn extract(&self, ctx: &RequestContext) -> Option<ConstraintValue> {
 - ✅ Body extraction is compiled (not regex, safe)
 - ✅ Type conversion with failure handling
 - ✅ Required fields enforced (`extract_all` returns error if missing)
+
+---
+
+## A2A (Agent-to-Agent)
+
+A2A servers extract arguments automatically from skill function signatures:
+
+```python
+from tenuo.a2a import A2AServer
+from tenuo import Subpath
+
+server = A2AServer(name="Worker", url="...", public_key=key, trusted_issuers=[...])
+
+@server.skill("read_file", constraints={"path": Subpath})
+async def read_file(path: str, max_size: int = 1000):
+    # Extraction: {path: "...", max_size: 1000}
+    ...
+```
+
+**Constraint binding**: Parameters must match constraint keys (validated at startup).
 
 ---
 

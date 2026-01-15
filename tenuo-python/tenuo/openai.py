@@ -69,9 +69,9 @@ OpenAI Agents SDK Integration:
     Tenuo integrates with the OpenAI Agents SDK (openai-agents) via guardrails:
 
     from agents import Agent
-    from tenuo.openai import create_tool_guardrail, Pattern
+    from tenuo.openai import create_tier1_guardrail, Pattern
 
-    guardrail = create_tool_guardrail(
+    guardrail = create_tier1_guardrail(
         constraints={"send_email": {"to": Pattern("*@company.com")}}
     )
 
@@ -80,7 +80,7 @@ OpenAI Agents SDK Integration:
         input_guardrails=[guardrail],  # Validates tool calls before execution
     )
 
-    For Tier 2 (warrant-based), use create_warrant_guardrail().
+    For Tier 2 (warrant-based), use create_tier2_guardrail().
 """
 
 from __future__ import annotations
@@ -199,12 +199,41 @@ class TenuoOpenAIError(Exception):
 
 
 class ToolDenied(TenuoOpenAIError):
-    """Raised when a tool call is denied by the guardrail."""
+    """Raised when a tool call is denied by the guardrail.
 
-    def __init__(self, tool_name: str, reason: str, code: str = "T1_001"):
-        super().__init__(f"Tool '{tool_name}' denied: {reason}", code)
+    This error includes a quick-fix suggestion to help resolve the issue.
+    """
+
+    def __init__(
+        self,
+        tool_name: str,
+        reason: str,
+        code: str = "T1_001",
+        *,
+        quick_fix: Optional[str] = None,
+        param: Optional[str] = None,
+        value: Any = None,
+    ):
+        # Build helpful message with quick fix
+        msg = f"Tool '{tool_name}' denied: {reason}"
+
+        if quick_fix:
+            msg += f"\n\n  Quick fix: {quick_fix}"
+        elif "not in allowlist" in reason.lower():
+            msg += f'\n\n  Quick fix: Add .allow("{tool_name}") to your GuardBuilder'
+        elif "denylist" in reason.lower():
+            msg += f'\n\n  Quick fix: Remove "{tool_name}" from your denylist'
+        elif param and "constraint" in reason.lower():
+            msg += f"\n\n  Quick fix: Check the constraint for '{param}' parameter"
+
+        msg += "\n  Docs: https://tenuo.dev/docs/openai"
+
+        super().__init__(msg, code)
         self.tool_name = tool_name
         self.reason = reason
+        self.quick_fix = quick_fix
+        self.param = param
+        self.value = value
 
 
 class WarrantDenied(TenuoOpenAIError):
@@ -218,10 +247,32 @@ class WarrantDenied(TenuoOpenAIError):
     - Warrant expiration
     """
 
-    def __init__(self, tool_name: str, reason: str, code: str = "T2_001"):
-        super().__init__(f"Warrant denied tool '{tool_name}': {reason}", code)
+    def __init__(
+        self,
+        tool_name: str,
+        reason: str,
+        code: str = "T2_001",
+        *,
+        param: Optional[str] = None,
+        constraint_type: Optional[str] = None,
+    ):
+        # Build helpful message
+        msg = f"Warrant denied tool '{tool_name}': {reason}"
+
+        if param and constraint_type:
+            msg += f"\n\n  The '{param}' argument violated a {constraint_type} constraint."
+            msg += "\n  This means the value you passed is outside what the warrant allows."
+        elif "not in" in reason.lower() or "not authorized" in reason.lower():
+            msg += "\n\n  The warrant doesn't include this tool in its capabilities."
+            msg += "\n  Request a new warrant with this tool included."
+
+        msg += "\n  Docs: https://tenuo.dev/docs/warrants"
+
+        super().__init__(msg, code)
         self.tool_name = tool_name
         self.reason = reason
+        self.param = param
+        self.constraint_type = constraint_type
 
 
 class MissingSigningKey(TenuoOpenAIError):
@@ -1853,6 +1904,25 @@ class GuardBuilder:
         self._validate_mode = mode
         return self
 
+    def _validate_url_pattern(self, constraint: Any) -> Optional[str]:
+        """
+        Validate UrlPattern for security best practices.
+
+        Returns error message if pattern is too permissive.
+        """
+        # Check if this is a UrlPattern constraint
+        pattern_str = getattr(constraint, "pattern", None)
+        if pattern_str and "://*/" in pattern_str:
+            return (
+                f"UrlPattern with bare wildcard host ('{pattern_str}') is not allowed. "
+                "This would bypass SSRF protection by allowing ANY domain. "
+                "Use explicit domains instead:\n"
+                "  - UrlPattern('https://api.github.com/*')\n"
+                "  - UrlPattern('https://*.example.com/*')\n"
+                "  - UrlSafe(allow_domains=['github.com']) for SSRF protection"
+            )
+        return None
+
     def _validate_constraints(self) -> List[str]:
         """Validate constraints against tool schemas.
 
@@ -1861,6 +1931,14 @@ class GuardBuilder:
         warnings: List[str] = []
 
         for tool_name, params in self._constraints.items():
+            # Security: Check for overly permissive UrlPattern constraints
+            for param_name, constraint in params.items():
+                if param_name.startswith("_"):
+                    continue
+                url_pattern_error = self._validate_url_pattern(constraint)
+                if url_pattern_error:
+                    warnings.append(f"[{tool_name}.{param_name}] {url_pattern_error}")
+
             # Check if tool exists in schemas
             if tool_name not in self._tool_schemas:
                 # Not an error - tool might not be registered
@@ -2081,9 +2159,9 @@ def guard(
 # multi-agent systems. Tenuo integrates via the guardrails mechanism:
 #
 #   from agents import Agent, Runner
-#   from tenuo.openai import create_tool_guardrail, Pattern
+#   from tenuo.openai import create_tier1_guardrail, Pattern
 #
-#   guardrail = create_tool_guardrail(
+#   guardrail = create_tier1_guardrail(
 #       constraints={"send_email": {"to": Pattern("*@company.com")}}
 #   )
 #
@@ -2093,12 +2171,12 @@ def guard(
 #       input_guardrails=[guardrail],  # Validates tool calls before execution
 #   )
 #
-# For Tier 2 (warrant-based), use create_warrant_guardrail():
+# For Tier 2 (warrant-based), use create_tier2_guardrail():
 #
-#   from tenuo.openai import create_warrant_guardrail
+#   from tenuo.openai import create_tier2_guardrail
 #   from tenuo import SigningKey, Warrant
 #
-#   guardrail = create_warrant_guardrail(warrant=warrant, signing_key=agent_key)
+#   guardrail = create_tier2_guardrail(warrant=warrant, signing_key=agent_key)
 #   agent = Agent(..., input_guardrails=[guardrail])
 
 
@@ -2385,7 +2463,7 @@ class TenuoToolGuardrail:
         return None
 
 
-def create_tool_guardrail(
+def create_tier1_guardrail(
     *,
     allow_tools: Optional[List[str]] = None,
     deny_tools: Optional[List[str]] = None,
@@ -2410,9 +2488,9 @@ def create_tool_guardrail(
 
     Example:
         from agents import Agent
-        from tenuo.openai import create_tool_guardrail, Pattern
+        from tenuo.openai import create_tier1_guardrail, Pattern
 
-        guardrail = create_tool_guardrail(
+        guardrail = create_tier1_guardrail(
             constraints={
                 "send_email": {"to": Pattern("*@company.com")},
                 "read_file": {"path": Pattern("/data/*")},
@@ -2433,7 +2511,7 @@ def create_tool_guardrail(
     )
 
 
-def create_warrant_guardrail(
+def create_tier2_guardrail(
     *,
     warrant: Warrant,
     signing_key: SigningKey,
@@ -2457,7 +2535,7 @@ def create_warrant_guardrail(
 
     Example:
         from agents import Agent, Runner
-        from tenuo.openai import create_warrant_guardrail
+        from tenuo.openai import create_tier2_guardrail
         from tenuo import SigningKey, Warrant, Pattern
 
         # Control plane issues warrant to agent
@@ -2471,7 +2549,7 @@ def create_warrant_guardrail(
             .mint(control_key))
 
         # Agent uses warrant
-        guardrail = create_warrant_guardrail(
+        guardrail = create_tier2_guardrail(
             warrant=warrant,
             signing_key=agent_key,
         )
@@ -2506,8 +2584,8 @@ __all__ = [
     # OpenAI Agents SDK Integration
     "TenuoToolGuardrail",
     "GuardrailResult",
-    "create_tool_guardrail",
-    "create_warrant_guardrail",
+    "create_tier1_guardrail",
+    "create_tier2_guardrail",
     # Audit
     "AuditEvent",
     "AuditCallback",
@@ -2520,6 +2598,8 @@ __all__ = [
     "WarrantDenied",
     "MissingSigningKey",
     "ConfigurationError",
+    # Zero-config entry point
+    "protect",
     # Re-export constraints for convenience
     "Pattern",
     "Exact",
@@ -2541,3 +2621,82 @@ __all__ = [
     "Warrant",
     "SigningKey",
 ]
+
+
+# =============================================================================
+# Zero-Config Entry Point
+# =============================================================================
+
+
+def protect(
+    client: Any,
+    *,
+    tools: Optional[List[Any]] = None,
+) -> GuardedClient:
+    """
+    Wrap an OpenAI client with Tenuo protection. Zero configuration required.
+
+    This is the simplest way to add Tenuo to your OpenAI integration.
+    It provides "fail-closed" security: only explicitly allowed tools can run.
+
+    Args:
+        client: OpenAI client (sync or async)
+        tools: List of allowed tools (names, dicts, or functions).
+               If not provided, ALL tools are denied by default.
+
+    Returns:
+        Protected client that only allows specified tools
+
+    Example - Quick Start::
+
+        from openai import OpenAI
+        from tenuo.openai import protect
+
+        # Protect your client - only 'search' is allowed
+        client = protect(OpenAI(), tools=["search"])
+
+        # This works:
+        response = client.chat.completions.create(
+            model="gpt-4",
+            messages=[{"role": "user", "content": "Search for AI papers"}],
+            tools=[{"type": "function", "function": {"name": "search", ...}}]
+        )
+
+        # If LLM tries to call 'delete_file', it's blocked automatically
+
+    Example - With Constraints::
+
+        from tenuo.openai import protect, GuardBuilder, Subpath
+
+        # For constraints, use GuardBuilder instead:
+        client = (GuardBuilder(OpenAI())
+            .allow("search")
+            .allow("read_file", path=Subpath("/data"))  # Only /data/ allowed
+            .build())
+
+    Next Steps:
+        - Add constraints: Use GuardBuilder().allow("tool", param=Constraint)
+        - Add warrants: Use GuardBuilder().with_warrant(warrant, key)
+        - See docs: https://tenuo.dev/docs/openai
+    """
+    if tools is None:
+        # No tools specified = deny all (fail closed)
+        return guard(client, allow_tools=[], on_denial="raise")
+
+    # Extract tool names
+    tool_names = []
+    for tool in tools:
+        if isinstance(tool, str):
+            tool_names.append(tool)
+        elif isinstance(tool, dict):
+            # OpenAI tool format
+            if "function" in tool:
+                tool_names.append(tool["function"].get("name", ""))
+            elif "name" in tool:
+                tool_names.append(tool["name"])
+        elif callable(tool):
+            tool_names.append(getattr(tool, "__name__", str(tool)))
+        else:
+            tool_names.append(str(tool))
+
+    return guard(client, allow_tools=tool_names, on_denial="raise")

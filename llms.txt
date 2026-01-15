@@ -40,7 +40,7 @@ CONSTRAINT
   - OneOf(["a", "b"])      - Set membership
   - Subpath("/data")       - Secure path containment (blocks traversal)
   - UrlSafe()              - SSRF protection (blocks internal IPs)
-  - Shlex(allow=["ls"])    - Shell injection protection
+  - Shlex(allow_binaries=["/usr/bin/ls"])  - Shell injection protection
 
 CAPABILITY
   A tool + its constraints:
@@ -96,17 +96,17 @@ from tenuo import (
 key = SigningKey.generate()
 warrant = (Warrant.mint_builder()
     .capability("read_file", path=Subpath("/data"))
-    .capability("search", query=Pattern("weather *"))
+    .capability("search")  # No constraint = allow any query
     .holder(key.public_key)
     .ttl(3600)
     .mint(key))
 
 # Method 2: Quick mint with context manager
-from tenuo import configure, mint_sync, Capability, Pattern
+from tenuo import configure, mint_sync, Capability, Wildcard
 
 configure(issuer_key=SigningKey.generate(), dev_mode=True)
 
-with mint_sync(Capability("search", query=Pattern("*"))):
+with mint_sync(Capability("search", query=Wildcard())):
     # warrant is automatically in scope
     result = search(query="test")
 
@@ -154,18 +154,29 @@ OneOf(["staging", "dev", "production"])
 Range(0, 100)                 # 0 <= x <= 100
 Range.max_value(1000)         # x <= 1000
 
+# Wildcard - Match anything (explicit)
+Wildcard()                    # Allows any value
+
+# Cidr - IP/network range
+Cidr("10.0.0.0/8")            # Matches 10.x.x.x
+Cidr("192.168.1.0/24")        # Matches 192.168.1.x
+# Methods: .satisfies(ip) -> bool
+
 # Subpath - Secure path containment (RECOMMENDED for file paths)
 Subpath("/data")              # Blocks /data/../etc/passwd
-# Methods: .contains(path) -> bool
+# Methods: .contains(path) -> bool, .satisfies(path) -> bool
 
 # UrlSafe - SSRF protection (RECOMMENDED for URLs)
 UrlSafe()                     # Blocks private IPs, metadata endpoints
 UrlSafe(allow_domains=["api.github.com"])
-# Methods: .is_safe(url) -> bool
+# Methods: .is_safe(url) -> bool, .satisfies(url) -> bool
 
 # Shlex - Shell injection protection (RECOMMENDED for commands)
-Shlex(allow=["ls", "cat"])    # Only allows these binaries
-# Methods: .matches(command) -> bool
+Shlex(allow_binaries=["/usr/bin/ls", "/usr/bin/cat"])  # Only allows these binaries
+# Methods: .satisfies(cmd) -> bool, .matches(command) -> bool
+
+# ALL CONSTRAINTS:
+# - .satisfies(value) -> bool   # Unified method (preferred)
 
 ### PROOF-OF-POSSESSION (PoP) ###
 
@@ -201,9 +212,12 @@ key = registry.get("worker")
 
 # Warrant to string (base64)
 warrant_str = str(warrant)
+# or explicitly:
+warrant_str = warrant.to_base64()
 
-# String to warrant
-warrant = Warrant(warrant_str)
+# String to warrant (both are equivalent)
+warrant = Warrant.from_base64(warrant_str)  # Explicit (recommended)
+warrant = Warrant(warrant_str)              # Constructor auto-detects
 
 # BoundWarrant CANNOT be serialized (security)
 # Extract warrant for storage:
@@ -284,9 +298,14 @@ class Warrant:
     
     # ===== AUTHORIZATION METHODS (use for real security decisions) =====
     
-    def authorize(self, tool: str, args: dict, signature: bytes) -> bool
+    def authorize(self, tool: str, args: dict, *, signature: bytes = None) -> bool
         """
         REAL AUTHORIZATION - Use this for security decisions.
+        
+        Args:
+            tool: Tool name
+            args: Arguments dict
+            signature: PoP signature bytes (required for full authorization)
         
         Performs ALL checks:
         1. Tool is in warrant
@@ -299,6 +318,9 @@ class Warrant:
     
     def sign(self, key: SigningKey, tool: str, args: dict) -> bytes
         """Create PoP signature for tool invocation."""
+    
+    def validate_chain(self, trusted_roots: List[PublicKey]) -> bool
+        """Validate warrant chain came from trusted root."""
     
     # ===== DEBUG/DIAGNOSTIC METHODS (NOT for security decisions) =====
     # WARNING: These methods skip cryptographic verification!
@@ -459,8 +481,10 @@ class BoundWarrant:
         """
         REAL AUTHORIZATION - Use this for security decisions.
         
-        Creates PoP signature and verifies it. Returns ValidationResult
-        with success/failure and detailed feedback.
+        Creates PoP signature internally and verifies authorization.
+        Use when you have the key bound to the warrant.
+        
+        Returns ValidationResult with success/failure and detailed feedback.
         
         Use this BEFORE executing any sensitive operation.
         """
@@ -474,6 +498,11 @@ class BoundWarrant:
         Automatically validates before generating headers.
         Raises RuntimeError if authorization fails.
         """
+
+# WHEN TO USE WHICH:
+# ------------------------------------------------------------------------
+# BoundWarrant.validate()    - When you have key bound (creates PoP internally)
+# Warrant.authorize()        - When PoP comes from elsewhere (e.g., HTTP header)
     
     # ===== DEBUG/DIAGNOSTIC METHODS (NOT for security decisions) =====
     
@@ -626,12 +655,13 @@ FRAMEWORK INTEGRATIONS
 
 ### OPENAI ###
 
-from tenuo.openai import GuardBuilder, Subpath, UrlSafe, Shlex
+from tenuo.openai import GuardBuilder, protect, Subpath, UrlSafe, Shlex
 
+# Builder pattern (recommended)
 client = (GuardBuilder(openai.OpenAI())
     .allow("read_file", path=Subpath("/data"))
     .allow("fetch_url", url=UrlSafe())
-    .allow("run_command", cmd=Shlex(allow=["ls"]))
+    .allow("run_command", cmd=Shlex(allow_binaries=["/usr/bin/ls"]))
     .deny("delete_file")
     .on_denial("raise")  # or "skip", "log"
     .build())
@@ -640,6 +670,13 @@ response = client.chat.completions.create(
     model="gpt-4o",
     messages=[...],
     tools=[...]
+)
+
+# Zero-config entry point
+client = protect(
+    openai.OpenAI(),
+    read_file=Subpath("/data"),
+    fetch_url=UrlSafe(allow_domains=["api.github.com"]),
 )
 
 ### LANGCHAIN ###
@@ -669,11 +706,46 @@ async def search(ctx: SecurityContext = Depends(TenuoGuard("search"))):
     # ctx.warrant is verified
     return {"results": [...]}
 
+### GOOGLE ADK ###
+
+from tenuo.google_adk import GuardBuilder, protect_agent
+
+# Builder pattern (recommended)
+guard = (GuardBuilder()
+    .with_warrant(warrant, signing_key)
+    .on_denial("raise")  # or "log" for development
+    .build())
+
+agent = Agent(
+    tools=guard.filter_tools([read_file, search, delete_file]),  # Filters unauthorized
+    before_tool_callback=guard.before_tool,  # Validates constraints
+)
+
+# Zero-config alternative
+agent = protect_agent(
+    Agent(tools=[read_file, search]),
+    warrant=warrant,
+    signing_key=signing_key,
+)
+
 ### A2A (AGENT-TO-AGENT) ###
 
-from tenuo.a2a import A2AServer, A2AClient
+from tenuo.a2a import A2AServer, A2AClient, A2AServerBuilder, A2AClientBuilder
 
-# Server
+# Server (builder pattern - recommended)
+server = (A2AServerBuilder()
+    .name("Research Agent")
+    .url("https://research.example.com")
+    .public_key(my_public_key)
+    .accept_warrants_from(orchestrator_key)  # Trusted issuers
+    .on_success(audit_callback)
+    .build())
+
+@server.skill("search", constraints={"sources": UrlSafe})
+async def search(query: str, sources: list[str]):
+    return await do_search(query, sources)
+
+# Server (direct constructor)
 server = A2AServer(
     name="Research Agent",
     url="https://research.example.com",
@@ -681,16 +753,19 @@ server = A2AServer(
     trusted_issuers=[orchestrator_key],
 )
 
-@server.skill("search", constraints={"sources": UrlSafe})
-async def search(query: str, sources: list[str]):
-    return await do_search(query, sources)
+# Client (builder pattern - recommended)
+client = (A2AClientBuilder()
+    .server_url("https://research.example.com")
+    .warrant(task_warrant)
+    .signing_key(my_key)
+    .timeout(30)
+    .build())
 
-# Client
-client = A2AClient("https://research.example.com")
-result = await client.send_task(
-    message="Find papers on security",
-    warrant=task_warrant,
-)
+result = await client.send_task("Find papers on security")
+
+# Streaming with timeout (DoS protection)
+async for update in client.send_task_streaming("Find papers", stream_timeout=300.0):
+    print(update)
 
 ================================================================================
 PROTOCOL INVARIANTS (from protocol-spec-v1.md)
@@ -802,23 +877,23 @@ constraint = UrlSafe(allow_domains=["api.github.com", "*.googleapis.com"])
 
 The Shlex constraint validates shell commands by:
 - Parsing with Python's shlex module (shell semantics)
-- Checking binary against allowlist
+- Checking binary against allowlist (resolved via PATH)
 - Blocking shell operators (;, |, &, etc.)
 - Blocking command substitution ($(), ``)
 
 from tenuo import Shlex
 
-constraint = Shlex(allow=["ls", "cat", "echo"])
+constraint = Shlex(allow_binaries=["/usr/bin/ls", "/usr/bin/cat", "/bin/echo"])
 
 # Safe commands
-constraint.matches("ls -la /data")              # True
-constraint.matches("cat /data/file.txt")        # True
+constraint.satisfies("ls -la /data")              # True
+constraint.satisfies("cat /data/file.txt")        # True
 
 # Blocked attacks
-constraint.matches("ls; rm -rf /")              # False (chained command)
-constraint.matches("cat /etc/passwd | nc x")    # False (pipe)
-constraint.matches("$(whoami)")                 # False (substitution)
-constraint.matches("rm -rf /")                  # False (not in allowlist)
+constraint.satisfies("ls; rm -rf /")              # False (chained command)
+constraint.satisfies("cat /etc/passwd | nc x")    # False (pipe)
+constraint.satisfies("$(whoami)")                 # False (substitution)
+constraint.satisfies("rm -rf /")                  # False (not in allowlist)
 
 ================================================================================
 COMMON PATTERNS
@@ -1144,7 +1219,7 @@ Best for: Quick hardening of OpenAI tool calls without full PKI
 │  client = (GuardBuilder(openai.OpenAI())                                    │
 │      .allow("read_file", path=Subpath("/data"))                             │
 │      .allow("fetch", url=UrlSafe(allow_domains=["api.github.com"]))         │
-│      .allow("exec", cmd=Shlex(allow=["ls", "cat"]))                         │
+│      .allow("exec", cmd=Shlex(allow_binaries=["/usr/bin/ls"]))              │
 │      .deny("delete_file")                                                   │
 │      .on_denial("raise")  # or "skip", "log"                                │
 │      .build())                                                              │
@@ -1485,6 +1560,86 @@ IMPORTANT NOTES FOR AI ASSISTANTS
     - Always call authorize()/validate() with PoP signature
     - Never use allows() for authorization decisions
     - Short TTLs + PoP = defense in depth
+
+
+================================================================================
+COMMON MISTAKES (DON'T DO THIS)
+================================================================================
+
+### Using Pattern for file paths ###
+❌ WRONG: Pattern("/data/*")      # Vulnerable to /data/../etc/passwd
+✅ RIGHT: Subpath("/data")        # Blocks traversal attacks
+
+### Using UrlPattern with bare wildcard host ###
+❌ WRONG: UrlPattern("https://*/*")  # Would allow ANY domain (SSRF risk)
+✅ RIGHT: UrlPattern("https://*.example.com/*")  # Specific domain only
+✅ RIGHT: UrlSafe(allow_domains=["api.example.com"])  # SSRF-protected
+
+### Using allows() for authorization ###
+❌ WRONG: if bound.allows(...): do_thing()  # No PoP check!
+✅ RIGHT: if bound.validate(...): do_thing()  # Full authorization
+
+### Serializing BoundWarrant ###
+❌ WRONG: json.dumps({"bound": bound})  # Contains private key!
+✅ RIGHT: json.dumps({"warrant": str(bound.warrant)})
+
+### Widening in delegation ###
+❌ WRONG: child with Subpath("/") when parent has Subpath("/data")
+✅ RIGHT: child with Subpath("/data/reports")  # Narrower
+
+### Pattern("safe*") for search queries ###
+❌ WRONG: .capability("search", query=Pattern("safe*"))  # Only "safe..."
+✅ RIGHT: .capability("search", query=Wildcard())  # Any query allowed
+
+### Forgetting PoP signature ###
+❌ WRONG: warrant.authorize(tool, args)  # Missing signature!
+✅ RIGHT: warrant.authorize(tool, args, signature=pop_sig)
+
+================================================================================
+QUICK ANSWERS
+================================================================================
+
+Q: How do I allow any value for an argument?
+A: Use Wildcard() constraint, or omit the constraint entirely.
+
+Q: Why is my delegation failing with MonotonicityError?
+A: Child constraint is wider than parent. Make it narrower.
+
+Q: Can I use regex instead of glob patterns?
+A: Yes, use Regex(). But narrowing validation is stricter.
+
+Q: How long should TTLs be?
+A: 5 minutes default, 15 minutes max for most cases. Short and sweet.
+
+Q: My warrant expired mid-operation. What do?
+A: Request a new warrant. Use shorter operations or push-based refresh.
+
+Q: What's the difference between Pattern("*") and Wildcard()?
+A: Both allow any value. Wildcard() is more explicit and slightly faster.
+
+Q: Do I need trusted_roots in production?
+A: Yes! Without it, anyone can mint warrants. Set trusted_roots.
+
+Q: Can I extend a warrant's TTL?
+A: No. Issue a new warrant. This is by design (re-evaluation).
+
+Q: How do I debug "tool not in warrant" errors?
+A: Use warrant.why_denied(tool, args) for detailed explanation.
+
+Q: Should I use Warrant.authorize() or BoundWarrant.validate()?
+A: validate() when you have the key. authorize() when PoP comes from HTTP.
+
+================================================================================
+VERSION INFO
+================================================================================
+
+SDK Versions:
+  - tenuo (Python): 0.1.0-beta.6
+  - tenuo_core (Rust): 0.5.0
+  - Wire format: v1
+  - Last updated: 2026-01-14
+
+Note: Update these versions when releasing new versions of the SDK.
 
 ================================================================================
 END OF CONTEXT DOCUMENT

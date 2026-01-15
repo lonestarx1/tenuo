@@ -31,10 +31,135 @@ if TYPE_CHECKING:
 
 __all__ = [
     "A2AClient",
+    "A2AClientBuilder",
     "delegate",
 ]
 
 logger = logging.getLogger("tenuo.a2a.client")
+
+
+# =============================================================================
+# A2A Client Builder
+# =============================================================================
+
+
+class A2AClientBuilder:
+    """
+    Build a client to call A2A agents with warrant authorization.
+
+    **What is A2A?**
+    Agent-to-Agent (A2A) is a protocol for agents to call each other's skills.
+    The client sends tasks with warrants proving authorization.
+
+    **Quick Start:**
+        from tenuo.a2a import A2AClientBuilder
+
+        client = (A2AClientBuilder()
+            .url("https://research-agent.example.com")  # Target agent
+            .warrant(my_warrant, my_signing_key)        # Your authorization
+            .build())
+
+        # Call the agent's skill
+        result = await client.send_task(
+            message="Find papers on AI safety",
+            skill="search",
+            arguments={"query": "AI safety"}
+        )
+
+    **Key Concepts:**
+    - **url**: The A2A agent you want to call
+    - **warrant**: Signed token proving you're allowed to call the agent
+    - **signing_key**: Your private key for Proof-of-Possession signatures
+
+    **Fluent Methods:**
+    - `.url()` - Target agent URL (required)
+    - `.warrant()` - Your warrant and signing key (can also pass per-request)
+    - `.pin_key()` - Expected agent public key (prevents TOFU attacks)
+    - `.timeout()` - Request timeout in seconds (default: 30)
+    """
+
+    def __init__(self) -> None:
+        """Initialize with defaults."""
+        self._url: Optional[str] = None
+        self._auth: Optional[Any] = None
+        self._pin_key: Optional[str] = None
+        self._timeout: float = 30.0
+        self._default_warrant: Optional["Warrant"] = None
+        self._default_signing_key: Optional["SigningKey"] = None
+
+    def url(self, url: str) -> "A2AClientBuilder":
+        """Set the target agent URL (required)."""
+        self._url = url
+        return self
+
+    def auth(self, auth: Any) -> "A2AClientBuilder":
+        """Set authentication config for requests."""
+        self._auth = auth
+        return self
+
+    def pin_key(self, key: Any) -> "A2AClientBuilder":
+        """
+        Pin expected public key for TOFU protection.
+
+        If the agent's actual public key differs from this,
+        KeyMismatchError is raised on first request.
+        """
+        if hasattr(key, "to_bytes"):
+            self._pin_key = key.to_bytes().hex()
+        elif hasattr(key, "hex"):
+            self._pin_key = key.hex()
+        else:
+            self._pin_key = str(key)
+        return self
+
+    def timeout(self, seconds: float) -> "A2AClientBuilder":
+        """Set request timeout in seconds (default: 30)."""
+        self._timeout = seconds
+        return self
+
+    def warrant(
+        self, warrant: "Warrant", signing_key: Optional["SigningKey"] = None
+    ) -> "A2AClientBuilder":
+        """
+        Set default warrant for all requests.
+
+        Args:
+            warrant: Warrant to use for authorization
+            signing_key: Key for PoP signatures (required if server requires PoP)
+
+        With default warrant configured, you can call:
+            result = await client.send_task("Do something")
+
+        Instead of:
+            result = await client.send_task("Do something", warrant=w, signing_key=k)
+        """
+        self._default_warrant = warrant
+        self._default_signing_key = signing_key
+        return self
+
+    def build(self) -> "A2AClient":
+        """
+        Build the A2AClient.
+
+        Raises:
+            ValueError: If required fields are missing
+        """
+        if not self._url:
+            raise ValueError("A2AClientBuilder requires .url()")
+
+        client = A2AClient(
+            url=self._url,
+            auth=self._auth,
+            pin_key=self._pin_key,
+            timeout=self._timeout,
+        )
+
+        # Attach default warrant if configured
+        if self._default_warrant is not None:
+            client._default_warrant = self._default_warrant
+            client._default_signing_key = self._default_signing_key
+
+        return client
 
 
 # =============================================================================
@@ -45,6 +170,16 @@ logger = logging.getLogger("tenuo.a2a.client")
 class A2AClient:
     """
     Client for sending tasks to A2A agents with warrants.
+
+    Direct initialization:
+        client = A2AClient("https://research-agent.example.com")
+
+    Or use the builder for a fluent API:
+        client = (A2AClientBuilder()
+            .url("https://research-agent.example.com")
+            .pin_key(expected_key)
+            .warrant(my_warrant, my_key)
+            .build())
 
     Example:
         client = A2AClient("https://research-agent.example.com")
@@ -87,6 +222,10 @@ class A2AClient:
 
         # HTTP client (lazy init)
         self._client = None
+
+        # Default warrant (set by builder)
+        self._default_warrant: Optional["Warrant"] = None
+        self._default_signing_key: Optional["SigningKey"] = None
 
     async def _get_client(self):
         """Get or create httpx client."""
@@ -165,7 +304,7 @@ class A2AClient:
     async def send_task(
         self,
         message: Union[str, Message],
-        warrant: "Warrant",
+        warrant: Optional["Warrant"] = None,
         *,
         skill: Optional[str] = None,
         arguments: Optional[Dict[str, Any]] = None,
@@ -178,17 +317,25 @@ class A2AClient:
 
         Args:
             message: Task message (string or Message object)
-            warrant: Tenuo warrant for authorization (the leaf warrant)
+            warrant: Tenuo warrant (uses default if configured via builder)
             skill: Skill to invoke (required)
             arguments: Arguments for the skill
             task_id: Optional task ID (generated if not provided)
             warrant_chain: Optional delegation chain (parent-first order, excluding leaf)
-            signing_key: Signing key for Proof-of-Possession (required if agent requires PoP)
+            signing_key: Signing key for PoP (uses default if configured via builder)
 
         Returns:
             TaskResult with output
 
         Example:
+            # With builder-configured defaults
+            client = A2AClientBuilder().url("...").warrant(w, k).build()
+            result = await client.send_task(
+                message="Search for papers",
+                skill="search_papers",
+                arguments={"query": "AI safety"},
+            )
+
             # Direct invocation with PoP
             result = await client.send_task(
                 message="Search for papers",
@@ -208,6 +355,18 @@ class A2AClient:
                 signing_key=my_key,
             )
         """
+        # Use default warrant/signing_key if not provided
+        if warrant is None:
+            warrant = self._default_warrant
+        if signing_key is None:
+            signing_key = self._default_signing_key
+
+        if warrant is None:
+            raise ValueError(
+                "warrant is required. Either pass it to send_task() or configure "
+                "default via A2AClientBuilder().warrant()"
+            )
+
         client = await self._get_client()
 
         # Build message content
@@ -322,7 +481,7 @@ class A2AClient:
     async def send_task_streaming(
         self,
         message: Union[str, Message],
-        warrant: "Warrant",
+        warrant: Optional["Warrant"] = None,
         *,
         skill: Optional[str] = None,
         arguments: Optional[Dict[str, Any]] = None,
@@ -340,12 +499,12 @@ class A2AClient:
 
         Args:
             message: Task message (string or Message object)
-            warrant: Tenuo warrant for authorization (the leaf warrant)
+            warrant: Tenuo warrant (uses default if configured via builder)
             skill: Skill to invoke (required)
             arguments: Arguments for the skill
             task_id: Optional task ID (generated if not provided)
             warrant_chain: Optional delegation chain (parent-first order, excluding leaf)
-            signing_key: Signing key for Proof-of-Possession (required if agent requires PoP)
+            signing_key: Signing key for PoP (uses default if configured via builder)
             stream_timeout: Maximum total time for streaming in seconds (default 5 min).
                            None disables the timeout. Prevents slow-drip DoS attacks.
             strict_task_id: If True (default), abort stream if response task_id doesn't
@@ -359,6 +518,18 @@ class A2AClient:
             TimeoutError: If stream_timeout is exceeded
             ValueError: If strict_task_id=True and response task_id doesn't match
         """
+        # Use default warrant/signing_key if not provided
+        if warrant is None:
+            warrant = self._default_warrant
+        if signing_key is None:
+            signing_key = self._default_signing_key
+
+        if warrant is None:
+            raise ValueError(
+                "warrant is required. Either pass it to send_task_streaming() or "
+                "configure default via A2AClientBuilder().warrant()"
+            )
+
         client = await self._get_client()
 
         # Build message content

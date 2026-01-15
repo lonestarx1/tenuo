@@ -35,64 +35,134 @@ Warrant says: "Agent B can only search arxiv.org for this task"
 ## Installation
 
 ```bash
-pip install tenuo[a2a]
+pip install "tenuo[a2a]"
 ```
-
-This installs Tenuo with A2A dependencies (starlette, httpx).
 
 ---
 
-## Quick Start
+## Quick Start (Minimal Example)
 
-### Server (Agent B - Worker)
+**Server (Worker Agent):**
+
+```python
+from tenuo.a2a import A2AServerBuilder
+
+# Build server with fluent API
+server = (A2AServerBuilder()
+    .name("Worker")
+    .url("https://worker.example.com")
+    .key(my_signing_key)                    # Your identity
+    .accept_warrants_from(orchestrator_key) # Who can give you tasks
+    .build())
+
+@server.skill("echo")
+async def echo(msg: str) -> str:
+    return f"Echo: {msg}"
+
+# uvicorn server:server.app --port 8000
+```
+
+Or use the direct constructor:
 
 ```python
 from tenuo.a2a import A2AServer
-from tenuo.constraints import Subpath, UrlSafe
 
-# Create server with trusted issuer(s)
 server = A2AServer(
-    name="Research Agent",
-    url="https://research-agent.example.com",
+    name="Worker",
+    url="https://worker.example.com",
     public_key=my_public_key,
     trusted_issuers=[orchestrator_public_key],
 )
+```
 
-# Register skills with constraints
+**Client (Orchestrator):**
+
+```python
+from tenuo.a2a import A2AClientBuilder
+from tenuo import Warrant
+
+# Create warrant for this task
+task_warrant = (Warrant.mint_builder()
+    .capability("echo")
+    .holder(worker_public_key)
+    .ttl(300)
+    .mint(orchestrator_key))
+
+# Build client with default warrant
+client = (A2AClientBuilder()
+    .url("http://localhost:8000")
+    .warrant(task_warrant, orchestrator_key)  # Pre-configure for repeated use
+    .build())
+
+# Send task (warrant already configured)
+result = await client.send_task(
+    skill="echo",
+    arguments={"msg": "hello"},
+)
+print(result.output)  # "Echo: hello"
+```
+
+Or use the direct constructor:
+
+```python
+from tenuo.a2a import A2AClient
+
+client = A2AClient("http://localhost:8000")
+result = await client.send_task(
+    skill="echo",
+    arguments={"msg": "hello"},
+    warrant=task_warrant,
+    signing_key=orchestrator_key,
+)
+```
+
+That's it. The warrant proves the orchestrator authorized this specific task.
+
+---
+
+## Full Example (With Constraints)
+
+### Server (Worker)
+
+```python
+from tenuo.a2a import A2AServerBuilder
+from tenuo.constraints import Subpath, UrlSafe
+
+server = (A2AServerBuilder()
+    .name("Research Agent")
+    .url("https://research-agent.example.com")
+    .key(my_signing_key)
+    .accept_warrants_from(orchestrator_public_key)
+    .build())
+
+# Register skills with constraint bindings
 @server.skill("search_papers", constraints={"sources": UrlSafe})
 async def search_papers(query: str, sources: list[str]) -> list[dict]:
-    """Search academic papers. URLs constrained by warrant."""
     return await do_search(query, sources)
 
 @server.skill("read_file", constraints={"path": Subpath})
 async def read_file(path: str) -> str:
-    """Read a file. Path constrained by warrant."""
     with open(path) as f:
         return f.read()
 
-# Run with uvicorn
-import uvicorn
-uvicorn.run(server.app, host="0.0.0.0", port=8000)
+# uvicorn server:server.app --host 0.0.0.0 --port 8000
 ```
 
-### Client (Agent A - Orchestrator)
+### Client (Orchestrator)
 
 ```python
 from tenuo.a2a import A2AClient
-from tenuo import Warrant, SigningKey
 from tenuo.constraints import UrlSafe
 
 # Discover agent capabilities
 client = A2AClient("https://research-agent.example.com")
 card = await client.discover()
-print(f"Agent: {card.name}")
-print(f"Requires warrant: {card.requires_warrant}")
 
 # Attenuate warrant for this delegation
 task_warrant = (my_warrant
     .grant_builder()
     .capability("search_papers", sources=UrlSafe(allow_domains=["arxiv.org"]))
-    .audience(card.public_key)  # Target agent's public key from discovery
+    .audience(card.public_key)
     .ttl(300)
     .build(my_signing_key))
 
@@ -103,8 +173,6 @@ result = await client.send_task(
     skill="search_papers",
     arguments={"query": "capability-based security", "sources": ["https://arxiv.org"]},
 )
-
-print(f"Found {len(result.output)} papers")
 ```
 
 ### Streaming Tasks
@@ -240,6 +308,22 @@ client = A2AClient(
 
 card = await client.discover()  # Fails if key doesn't match
 ```
+
+### Key Format Compatibility
+
+A2A accepts public keys in multiple formats:
+
+```python
+# All of these work:
+server = A2AServerBuilder()
+    .key(signing_key)  # PublicKey object
+    .accept_warrants_from("a1b2c3...")  # Hex (64 chars)
+    .accept_warrants_from("z6MkpT...")  # Multibase (base58btc)
+    .accept_warrants_from("did:key:z6MkpT...")  # W3C DID
+    .build()
+```
+
+All formats are automatically normalized for comparison. Multibase and DID support requires `pip install base58`.
 
 ---
 

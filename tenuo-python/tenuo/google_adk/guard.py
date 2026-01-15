@@ -7,8 +7,11 @@ Provides constraint enforcement for Google ADK agents with two tiers:
     Good for single-process scenarios. Uses `allows()` for logic checks.
 
 **Tier 2 (Warrant + PoP)**: Cryptographic authorization with Proof-of-Possession.
-    Required for distributed/multi-agent scenarios. Each tool call is signed
-    with the agent's private key, proving the caller holds the warrant.
+    Uses warrant.authorize() which verifies signature, skill grant, AND constraints.
+
+    Note: In ADK (same-process), PoP proves the agent holds the signing key that
+    matches the warrant holder. For true distributed PoP where signature is
+    generated remotely, use the A2A module instead.
 
 Security Philosophy (Fail Closed):
     Tenuo follows a "fail closed" security model. When in doubt, deny:
@@ -436,8 +439,16 @@ class TenuoGuard:
 
                 if not authorized:
                     # Get detailed reason using why_denied (debug method)
-                    reason = self._get_denial_reason(warrant, skill_name, validation_args)
-                    return self._deny(f"Authorization failed: {reason}", tool.name, args)
+                    reason, constraint_param, constraint = self._get_denial_info(
+                        warrant, skill_name, validation_args
+                    )
+                    return self._deny(
+                        f"Authorization failed: {reason}",
+                        tool.name,
+                        args,
+                        constraint_param=constraint_param,
+                        constraint=constraint,
+                    )
 
                 # PoP authorized - tool call is allowed
                 self._audit("tool_allowed", tool.name, args, warrant)
@@ -561,22 +572,31 @@ class TenuoGuard:
         return None
 
     def _check_expiry(self, warrant: Any) -> bool:
-        """Check if warrant is expired."""
-        is_expired = getattr(warrant, "is_expired", None)
+        """Check if warrant is expired.
 
-        # Handle method vs property
-        if callable(is_expired):
-            return is_expired()
-        elif is_expired is not None:
-            return bool(is_expired)
+        Returns True if expired, False if valid or unknown.
+        Fails closed on exceptions (treats as expired).
+        """
+        try:
+            is_expired = getattr(warrant, "is_expired", None)
 
-        # Fallback: check exp claim manually
-        import time
-        exp = getattr(warrant, "exp", None)
-        if exp is not None:
-            return time.time() > exp
+            # Handle method vs property
+            if callable(is_expired):
+                return is_expired()
+            elif is_expired is not None:
+                return bool(is_expired)
 
-        return False
+            # Fallback: check exp claim manually
+            import time
+            exp = getattr(warrant, "exp", None)
+            if exp is not None:
+                return time.time() > exp
+
+            return False
+        except Exception as e:
+            # Fail closed: treat any exception as expired
+            logger.warning(f"Expiry check failed: {e} - treating as expired")
+            return True
 
     def _skill_granted(self, warrant: Any, skill_name: str) -> bool:
         """Check if skill is granted in warrant."""
@@ -599,21 +619,41 @@ class TenuoGuard:
         self, warrant: Any, skill_name: str, args: Dict[str, Any]
     ) -> str:
         """Get detailed denial reason using why_denied (debug method)."""
+        reason, _, _ = self._get_denial_info(warrant, skill_name, args)
+        return reason
+
+    def _get_denial_info(
+        self, warrant: Any, skill_name: str, args: Dict[str, Any]
+    ) -> tuple:
+        """Get denial info including constraint details for hints.
+
+        Returns:
+            tuple of (reason_string, constraint_param, constraint_object)
+        """
         try:
             why = warrant.why_denied(skill_name, args)
             if why:
                 status_str = str(why)
+                constraint_param = getattr(why, "field", None)
+                constraint = None
+
+                # Try to get the constraint from the warrant
+                if constraint_param:
+                    caps = getattr(warrant, "capabilities", {})
+                    if skill_name in caps:
+                        constraint = caps[skill_name].get(constraint_param)
+
                 if hasattr(why, "deny_code"):
                     reason = why.deny_code
-                    if hasattr(why, "field") and why.field:
-                        reason += f" (field: {why.field})"
+                    if constraint_param:
+                        reason += f" (field: {constraint_param})"
                     if hasattr(why, "suggestion") and why.suggestion:
                         reason += f" - {why.suggestion}"
-                    return reason
-                return status_str
+                    return reason, constraint_param, constraint
+                return status_str, constraint_param, constraint
         except Exception as e:
             logger.debug(f"why_denied() failed: {e}")
-        return "not authorized"
+        return "not authorized", None, None
 
     def _deny(
         self,

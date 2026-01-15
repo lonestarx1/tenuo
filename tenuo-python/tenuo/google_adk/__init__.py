@@ -1,36 +1,41 @@
 """
 Tenuo Google ADK Integration
 
-Provides warrant-based authorization for Google ADK agents.
+Provides authorization for Google ADK agents.
 
-Usage (Tier 2 - Warrant with PoP):
+**Quick Start (Zero Config):**
+    from google.adk import Agent
+    from tenuo.google_adk import protect_agent
+
+    # Wrap your agent - only allowed tools can run
+    agent = protect_agent(
+        Agent(tools=[search, read_file]),
+        allow=["search", "read_file"]  # Explicit allowlist
+    )
+
+**With Constraints:**
     from tenuo.google_adk import GuardBuilder
-    from tenuo import SigningKey, Warrant
+    from tenuo.constraints import Subpath
 
     guard = (GuardBuilder()
-        .with_warrant(my_warrant, agent_key)
-        .map_skill("read_file_tool", "read_file", path="file_path")
-        .on_denial("raise")
+        .allow("search")
+        .allow("read_file", path=Subpath("/data"))  # Only /data/ allowed
         .build())
 
     agent = Agent(
-        tools=guard.filter_tools([read_file, search]),
+        tools=[search, read_file],
         before_tool_callback=guard.before_tool,
     )
 
-Usage (Tier 1 - Direct Constraints, no warrant):
+**With Warrants (Distributed Authorization):**
     from tenuo.google_adk import GuardBuilder
-    from tenuo.constraints import Subpath, UrlSafe
 
     guard = (GuardBuilder()
-        .allow("read_file", path=Subpath("/data"))
-        .allow("web_search", url=UrlSafe(allow_domains=["example.com"]))
+        .with_warrant(my_warrant, my_signing_key)
         .build())
 
-    # Note: "shell" is denied by default - only explicitly allowed tools work
-
     agent = Agent(
-        tools=guard.filter_tools([read_file, search, shell]),
+        tools=[search, read_file],
         before_tool_callback=guard.before_tool,
     )
 
@@ -39,8 +44,6 @@ DX Helpers:
         chain_callbacks,      # Compose multiple callbacks
         explain_denial,       # Rich denial explanations
         visualize_warrant,    # Display warrant capabilities
-        suggest_skill_mapping,# Auto-suggest skill mappings
-        scoped_warrant,       # Context manager for dynamic warrants
     )
 """
 
@@ -61,6 +64,7 @@ from .helpers import (
     suggest_skill_mapping,
     scoped_warrant,
     generate_hints,
+    protect_agent,
 )
 from .decorators import (
     guard_tool,
@@ -69,6 +73,8 @@ from .decorators import (
 )
 
 __all__ = [
+    # Zero-config entry point
+    "protect_agent",
     # Core
     "TenuoGuard",
     "GuardBuilder",

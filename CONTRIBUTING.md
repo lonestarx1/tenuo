@@ -54,6 +54,15 @@ Please ensure this script passes before submitting a Pull Request.
     pytest tenuo-python/tests
     ```
 
+## Building Integrations
+
+If you're adding support for a new framework (e.g., LlamaIndex, AutoGPT):
+
+- Review the [Python Integration Guide](tenuo-python/docs/integration-guide.md) for required API patterns and invariant tests
+- Study existing integrations: [OpenAI](tenuo-python/tenuo/openai.py), [ADK](tenuo-python/tenuo/google_adk/guard.py), [LangChain](tenuo-python/tenuo/integrations/langchain.py)
+- Ensure all runtime authorization uses Rust core via wire format
+- Test against the 6 core invariants (monotonic attenuation, fail-closed, expiry, etc.)
+
 ## Code Style
 
 - **Rust**: We use `rustfmt`. The check script will verify formatting.

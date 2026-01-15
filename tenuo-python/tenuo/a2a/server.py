@@ -3,6 +3,18 @@ A2A Adapter - Server implementation.
 
 Provides A2AServer with @skill decorator for warrant-enforced skill execution.
 
+Security Considerations
+=======================
+
+**Rate Limiting**: The server includes replay protection (JTI cache) but does NOT
+include request rate limiting. Attackers can flood with unique JTIs. Deploy with
+a rate-limiting reverse proxy (nginx, envoy) or use a transport-layer solution.
+
+**PoP Verification**: When PoP is provided, warrant.authorize() verifies:
+1. Signature was made by the key matching warrant.sub (holder)
+2. Skill is granted in the warrant
+3. Arguments satisfy constraint requirements
+
 Constraint Validation Architecture
 ==================================
 
@@ -215,17 +227,225 @@ class SkillDefinition:
 # =============================================================================
 
 
+class A2AServerBuilder:
+    """
+    Build an A2A server that accepts warrant-authorized requests.
+
+    **What is A2A?**
+    Agent-to-Agent (A2A) is a protocol for agents to call each other's skills
+    with cryptographic authorization. The server defines skills, and clients
+    call them with warrants that prove they're allowed.
+
+    **Quick Start:**
+        from tenuo.a2a import A2AServerBuilder
+
+        server = (A2AServerBuilder()
+            .name("Research Agent")                     # Display name
+            .url("https://research.example.com")        # Your public URL
+            .key(my_signing_key)                        # Your identity
+            .accept_warrants_from(orchestrator_key)     # Who can give you tasks
+            .build())
+
+        @server.skill("search")
+        async def search(query: str):
+            return {"results": [...]}
+
+        # Run with: uvicorn server.app:app
+
+    **Key Concepts:**
+    - **skill**: A function this agent can perform (like "search", "read_file")
+    - **warrant**: A signed token proving the caller is allowed to invoke a skill
+    - **accept_warrants_from**: Which public keys can issue valid warrants
+
+    **Fluent Methods:**
+    - `.name()` - Agent display name (required)
+    - `.url()` - Public URL for audience validation (required)
+    - `.key()` - Your signing key (required, extracts public_key)
+    - `.accept_warrants_from()` - Who can issue warrants to you (required)
+    - `.require_warrant()` - Reject requests without warrants (default: True)
+    - `.require_pop()` - Require Proof-of-Possession signatures (default: True)
+    """
+
+    def __init__(self) -> None:
+        """Initialize with defaults."""
+        self._name: Optional[str] = None
+        self._url: Optional[str] = None
+        self._public_key: Optional[Any] = None
+        self._trusted_issuers: List[Any] = []
+        self._trust_delegated: bool = True
+        self._require_warrant: Optional[bool] = None
+        self._require_audience: Optional[bool] = None
+        self._require_pop: Optional[bool] = None
+        self._check_replay: Optional[bool] = None
+        self._replay_window: Optional[int] = None
+        self._max_chain_depth: Optional[int] = None
+        self._audit_log: Any = None
+        self._audit_format: str = "json"
+        self._previous_keys: Optional[List[Any]] = None
+
+    def name(self, name: str) -> "A2AServerBuilder":
+        """Set the agent display name (required)."""
+        self._name = name
+        return self
+
+    def url(self, url: str) -> "A2AServerBuilder":
+        """Set the agent's public URL (required, used for audience validation)."""
+        self._url = url
+        return self
+
+    def key(self, key: Any) -> "A2AServerBuilder":
+        """
+        Set the agent's key.
+
+        Accepts:
+        - SigningKey: extracts public_key automatically
+        - PublicKey: uses directly
+        - str: multibase or DID format
+        """
+        # If SigningKey, extract public_key
+        if hasattr(key, "public_key"):
+            self._public_key = key.public_key
+        else:
+            self._public_key = key
+        return self
+
+    def public_key(self, key: Any) -> "A2AServerBuilder":
+        """Set the agent's public key directly."""
+        self._public_key = key
+        return self
+
+    def accept_warrants_from(self, *issuers: Any) -> "A2AServerBuilder":
+        """
+        Accept warrants signed by these issuers.
+
+        This defines WHO can give this agent instructions. Only warrants
+        signed by (or delegated from) these keys will be accepted.
+
+        Args:
+            *issuers: Public keys of trusted warrant issuers.
+                     Can be called multiple times to add more.
+
+        Example:
+            # Accept warrants from orchestrator
+            builder.accept_warrants_from(orchestrator_key)
+
+            # Accept warrants from multiple sources
+            builder.accept_warrants_from(orchestrator_key, admin_key)
+        """
+        self._trusted_issuers.extend(issuers)
+        return self
+
+    def trust(self, *issuers: Any) -> "A2AServerBuilder":
+        """Alias for accept_warrants_from(). Kept for brevity."""
+        return self.accept_warrants_from(*issuers)
+
+    def trust_delegated(self, enabled: bool = True) -> "A2AServerBuilder":
+        """Accept warrants attenuated from trusted issuers (default: True)."""
+        self._trust_delegated = enabled
+        return self
+
+    def require_warrant(self, enabled: bool = True) -> "A2AServerBuilder":
+        """Reject tasks without warrant (default: True via env)."""
+        self._require_warrant = enabled
+        return self
+
+    def require_audience(self, enabled: bool = True) -> "A2AServerBuilder":
+        """Require aud claim matches our URL (default: True via env)."""
+        self._require_audience = enabled
+        return self
+
+    def require_pop(self, enabled: bool = True) -> "A2AServerBuilder":
+        """Require Proof-of-Possession signature (default: True via env)."""
+        self._require_pop = enabled
+        return self
+
+    def check_replay(self, enabled: bool = True) -> "A2AServerBuilder":
+        """Enforce jti uniqueness to prevent replay (default: True via env)."""
+        self._check_replay = enabled
+        return self
+
+    def replay_window(self, seconds: int) -> "A2AServerBuilder":
+        """Set replay cache window in seconds (default: 3600)."""
+        self._replay_window = seconds
+        return self
+
+    def max_chain_depth(self, depth: int) -> "A2AServerBuilder":
+        """Set maximum delegation chain depth (default: 10)."""
+        self._max_chain_depth = depth
+        return self
+
+    def audit_log(self, destination: Any, format: str = "json") -> "A2AServerBuilder":
+        """
+        Set audit log destination.
+
+        Args:
+            destination: File path, file handle, or "stderr"
+            format: "json" or "text"
+        """
+        self._audit_log = destination
+        self._audit_format = format
+        return self
+
+    def previous_keys(self, *keys: Any) -> "A2AServerBuilder":
+        """Add previous public keys for key rotation support."""
+        if self._previous_keys is None:
+            self._previous_keys = []
+        self._previous_keys.extend(keys)
+        return self
+
+    def build(self) -> "A2AServer":
+        """
+        Build the A2AServer.
+
+        Raises:
+            ValueError: If required fields (name, url, key, trust) are missing
+        """
+        if not self._name:
+            raise ValueError("A2AServerBuilder requires .name()")
+        if not self._url:
+            raise ValueError("A2AServerBuilder requires .url()")
+        if not self._public_key:
+            raise ValueError("A2AServerBuilder requires .key() or .public_key()")
+        if not self._trusted_issuers:
+            raise ValueError("A2AServerBuilder requires at least one .trust()")
+
+        return A2AServer(
+            name=self._name,
+            url=self._url,
+            public_key=self._public_key,
+            trusted_issuers=self._trusted_issuers,
+            trust_delegated=self._trust_delegated,
+            require_warrant=self._require_warrant,
+            require_audience=self._require_audience,
+            require_pop=self._require_pop,
+            check_replay=self._check_replay,
+            replay_window=self._replay_window,
+            max_chain_depth=self._max_chain_depth,
+            audit_log=self._audit_log,
+            audit_format=self._audit_format,
+            previous_keys=self._previous_keys,
+        )
+
+
 class A2AServer:
     """
     A2A server with warrant-based authorization.
 
-    Example:
+    Direct initialization:
         server = A2AServer(
             name="Research Agent",
             url="https://research-agent.example.com",
             public_key=my_public_key,
             trusted_issuers=[orchestrator_key],
         )
+
+    Or use the builder for a fluent API:
+        server = (A2AServerBuilder()
+            .name("Research Agent")
+            .url("https://research-agent.example.com")
+            .key(my_key)
+            .trust(orchestrator_key)
+            .build())
 
         @server.skill("search", constraints={"query": str})
         async def search(query: str) -> list[dict]:
@@ -368,16 +588,45 @@ class A2AServer:
 
         Accepts:
         - PublicKey objects (converted to hex of bytes)
-        - String keys (multibase, DID, or hex)
+        - DID strings (did:key:z6Mk... - extracts multibase key)
+        - Multibase strings (z6Mk... - converted to hex)
+        - Hex strings (unchanged)
 
         Returns:
-            Canonical string representation (hex for PublicKey, unchanged for strings)
+            Canonical hex string representation for consistent comparison.
+
+        Note: All formats are normalized to hex to enable cross-format comparison.
         """
         if isinstance(key, str):
+            # Handle DID format: did:key:z6Mk...
+            if key.startswith("did:key:"):
+                key = key[8:]  # Strip "did:key:" prefix
+
+            # Handle multibase (z = base58btc for Ed25519)
+            if key.startswith("z"):
+                try:
+                    import base58  # type: ignore[import-not-found]
+                    # Strip multibase prefix and decode
+                    decoded = base58.b58decode(key[1:])
+                    # Ed25519 multicodec prefix is 0xed01 (2 bytes)
+                    if len(decoded) > 2 and decoded[:2] == b'\xed\x01':
+                        return decoded[2:].hex()
+                    return decoded.hex()
+                except ImportError:
+                    # base58 not installed - return as-is
+                    logger.debug("base58 not installed, cannot normalize multibase key")
+                    return key
+                except Exception:
+                    # Decoding failed - return as-is
+                    return key
+
+            # Already hex or unknown format
             return key
+
         # Handle PublicKey objects from tenuo_core
         if hasattr(key, "to_bytes"):
             return key.to_bytes().hex()
+
         # Fallback: string representation
         return str(key)
 
@@ -552,8 +801,11 @@ class A2AServer:
                 raise PopVerificationError(f"Failed to parse PoP signature: {e}")
 
             # Verify PoP using warrant.authorize() which calls verify_pop internally
+            # This verifies:
+            #   1. Signature was made by the key matching warrant.sub (holder)
+            #   2. Skill is granted in warrant
+            #   3. Arguments satisfy constraint requirements
             try:
-                # warrant.authorize(skill, args, signature) verifies PoP and constraints
                 warrant.authorize(skill_id, args_cv, signature=pop_sig)
                 logger.debug(f"PoP verified for skill '{skill_id}'")
             except Exception as e:
@@ -1417,6 +1669,19 @@ class A2AServer:
                     # Await if coroutine
                     if hasattr(result, "__await__"):
                         result = await result
+
+                # Final expiry check before completion
+                # (catches expiry during long-running non-streaming skills)
+                if warrant_exp and time.time() > warrant_exp:
+                    error_event = {
+                        "type": "error",
+                        "task_id": task_id,
+                        "code": A2AErrorCode.EXPIRED,
+                        "message": "Warrant expired during execution",
+                        "data": {"at_completion": True},
+                    }
+                    yield f"data: {json.dumps(error_event)}\n\n"
+                    return
 
                 # Emit completion
                 complete_event = {

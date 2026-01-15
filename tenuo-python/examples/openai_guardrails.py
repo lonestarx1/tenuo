@@ -8,7 +8,7 @@ This uses Tier 1 (no cryptography) - runtime constraint checking only.
     For production systems where insider threats or container compromise are concerns,
     use Tier 2 (Warrant + PoP). See examples/openai_warrant.py for cryptographic protection.
 
-Key Pattern (Builder - Recommended):
+With Constraints (Builder - Recommended):
     client = (GuardBuilder(openai.OpenAI())
         .allow("search")
         .allow("read_file", path=Subpath("/data"))
@@ -33,6 +33,7 @@ from tenuo import Subpath, UrlSafe, Shlex, Pattern, Range
 
 # OpenAI-specific
 from tenuo.openai import (
+    protect,  # Zero-config entry point
     guard,
     GuardBuilder,
     ToolDenied,
@@ -519,17 +520,32 @@ def demo_skip_mode():
     print("  Prefer on_denial='raise' and handle the exception.\n")
 
 
+def demo_zero_config():
+    """Quickest start - zero configuration protection."""
+    print("=== Zero Config (protect) ===")
+
+    # This is the simplest way to add Tenuo protection
+    mock_client = MockOpenAIClient()
+    client = protect(mock_client, tools=["search", "read_file"])
+
+    print("Created client with protect():")
+    print(f"  - Client type: {type(client).__name__}")
+    print("  - Only 'search' and 'read_file' are allowed")
+    print("  - All other tools are blocked automatically")
+    print("  - No constraints needed for basic protection\n")
+
+
 def main():
     print("\n=== OpenAI + Tenuo Tier 1 Guardrails ===\n")
     print("This example shows Tier 1 (no cryptography) protection:")
-    print("  - Builder pattern (recommended) or dict style")
-    print("  - Allowlist/denylist for tools")
-    print("  - Argument constraints (Pattern, Range, OneOf, etc.)")
+    print("  - Builder pattern with semantic constraints (recommended)")
     print("  - Subpath for secure path containment (blocks traversal)")
     print("  - UrlSafe for SSRF protection (blocks private IPs, metadata)")
+    print("  - Simple allowlist: protect(client, tools=[...])")
     print("  - Type-strict validation\n")
 
-    demo_builder_pattern()  # Recommended approach
+    demo_builder_pattern()  # Recommended - shows Tenuo's value
+    demo_zero_config()  # Simple alternative
     demo_constraint_violation()
     demo_tool_denied()
     demo_subpath_protection()
