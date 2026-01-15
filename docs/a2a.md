@@ -89,12 +89,12 @@ print(f"Agent: {card.name}")
 print(f"Requires warrant: {card.requires_warrant}")
 
 # Attenuate warrant for this delegation
-task_warrant = my_warrant.attenuate(
-    capabilities={"search_papers": {"sources": UrlSafe(allow_domains=["arxiv.org"])}},
-    signing_key=my_signing_key,
-    holder=card.public_key,  # Target agent's public key from discovery
-    ttl_seconds=300,
-)
+task_warrant = (my_warrant
+    .grant_builder()
+    .skill("search_papers", sources=UrlSafe(allow_domains=["arxiv.org"]))
+    .audience(card.public_key)  # Target agent's public key from discovery
+    .ttl(300)
+    .build(my_signing_key))
 
 # Send task with warrant
 result = await client.send_task(
@@ -384,12 +384,12 @@ async def delegate_research(topic: str, my_warrant, my_key, target_pubkey):
     client = A2AClient("https://research-agent.example.com")
     
     # Attenuate warrant for this specific task
-    task_warrant = my_warrant.attenuate(
-        capabilities={"search_papers": {"sources": UrlSafe(allow_domains=["arxiv.org"])}},
-        signing_key=my_key,
-        holder=target_pubkey,
-        ttl_seconds=300,
-    )
+    task_warrant = (my_warrant
+        .grant_builder()
+        .skill("search_papers", sources=UrlSafe(allow_domains=["arxiv.org"]))
+        .audience(target_pubkey)
+        .ttl(300)
+        .build(my_key))
     
     return await client.send_task(
         message=f"Research: {topic}",
