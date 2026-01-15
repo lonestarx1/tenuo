@@ -213,10 +213,10 @@ if FASTAPI_AVAILABLE:
 
 else:
     # Placeholder functions when FastAPI not available
-    def get_warrant_header(*args: Any, **kwargs: Any) -> None:
+    def get_warrant_header(*args: Any, **kwargs: Any) -> None:  # type: ignore[misc]
         raise ImportError("FastAPI is not installed. Install with: pip install fastapi")
 
-    def require_warrant(*args: Any, **kwargs: Any) -> None:
+    def require_warrant(*args: Any, **kwargs: Any) -> None:  # type: ignore[misc]
         raise ImportError("FastAPI is not installed. Install with: pip install fastapi")
 
 

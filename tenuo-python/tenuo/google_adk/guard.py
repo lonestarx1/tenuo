@@ -65,8 +65,8 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Union, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from google.adk.tools.tool_context import ToolContext
-    from google.adk.tools.base_tool import BaseTool
+    from google.adk.tools.tool_context import ToolContext  # type: ignore[import-not-found]
+    from google.adk.tools.base_tool import BaseTool  # type: ignore[import-not-found]
     from tenuo_core import Warrant, SigningKey
 
 logger = logging.getLogger(__name__)

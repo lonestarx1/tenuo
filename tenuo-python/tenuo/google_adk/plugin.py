@@ -36,15 +36,15 @@ from typing import Optional, Dict, Any, TYPE_CHECKING
 logger = logging.getLogger(__name__)
 
 try:
-    from google.adk.plugins import BasePlugin
+    from google.adk.plugins import BasePlugin  # type: ignore[import-not-found]
 except ImportError:
     # Allow import even if google-adk not installed (for type checking)
-    BasePlugin = object  # type: ignore
+    BasePlugin = object  # type: ignore[misc]
 
 if TYPE_CHECKING:
-    from google.adk.tools.tool_context import ToolContext
-    from google.adk.tools.base_tool import BaseTool
-    from google.adk.agents.callback_context import CallbackContext
+    from google.adk.tools.tool_context import ToolContext  # type: ignore[import-not-found]
+    from google.adk.tools.base_tool import BaseTool  # type: ignore[import-not-found]
+    from google.adk.agents.callback_context import CallbackContext  # type: ignore[import-not-found]
     from tenuo_core import Warrant, SigningKey
 
 from .guard import TenuoGuard  # noqa: E402
