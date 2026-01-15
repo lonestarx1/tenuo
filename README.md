@@ -67,8 +67,6 @@ IAM answers "who are you?" Tenuo answers "what can you do right now?"
 | Tokens can be stolen and replayed | Proof-of-possession binds warrants to keys |
 | Central policy servers add latency | Offline verification in ~27μs |
 
-**Real-world validation:** String-based validation keeps failing. [CVE-2025-66032 in Claude Code](https://niyikiza.com/posts/cve-2025-66032/) showed that allowlists can't secure command execution when shells interpret strings differently than validators. Tenuo's semantic constraints (`Shlex`, `Subpath`, `UrlSafe`) operate at the right layer. See [The Map is not the Territory](https://niyikiza.com/posts/map-territory/) for the full analysis.
-
 ---
 
 ## What Tenuo Is Not
@@ -138,6 +136,8 @@ pip install "tenuo[mcp]"           # + MCP client (Python ≥3.10 required)
 ---
 
 ## Integrations
+
+> **Why semantic constraints?** [CVE-2025-66032](https://niyikiza.com/posts/cve-2025-66032/) showed allowlists fail when shells interpret strings differently than validators. Tenuo's `Shlex`, `Subpath`, and `UrlSafe` parse inputs the way the system will. [Full analysis](https://niyikiza.com/posts/map-territory/).
 
 **OpenAI** - Direct API protection with streaming TOCTOU defense
 ```python
@@ -249,7 +249,6 @@ See [Related Work](https://tenuo.dev/related-work) for detailed comparison.
 
 ## Featured In
 
-- [TLDR InfoSec](https://tldr.tech/infosec/2026-01-13) - "The Map is not the Territory: The Agent-Tool Trust Boundary"
 - [TLDR InfoSec](https://tldr.tech/infosec/2025-12-15) - "Capabilities Are the Only Way to Secure Agent Delegation"
 - [Awesome Object Capabilities](https://github.com/dckc/awesome-ocap) - Curated list of capability-based security resources
 - [Awesome LangChain](https://github.com/kyrolabs/awesome-langchain)
