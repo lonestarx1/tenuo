@@ -125,7 +125,7 @@ async def search(
 ## Installation
 
 ```bash
-pip install "tenuo[fastapi]"
+uv pip install "tenuo[fastapi]"
 ```
 
 ---

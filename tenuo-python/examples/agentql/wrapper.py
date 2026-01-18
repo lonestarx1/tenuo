@@ -97,7 +97,7 @@ class TenuoAgentQLAgent:
         except ImportError as e:
             raise ImportError(
                 "Real 'agentql' and 'playwright' libraries are required. "
-                "Please run: pip install agentql playwright"
+                "Please run: uv pip install agentql playwright"
             ) from e
 
         # Real AgentQL

@@ -23,7 +23,7 @@ Tenuo integrates with LangChain using a **zero-intrusion** pattern:
 ## Installation
 
 ```bash
-pip install "tenuo[langchain]"
+uv pip install "tenuo[langchain]"
 ```
 
 ---

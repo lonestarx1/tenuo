@@ -941,7 +941,7 @@ def _check_version():
         raise ImportError(
             f"tenuo_core >= {_MIN_VERSION} required. "
             f"Found {tenuo_core.__version__}. "
-            f"Run: pip install --upgrade tenuo"
+            f"Run: uv pip install --upgrade tenuo"
         )
 
 _check_version()

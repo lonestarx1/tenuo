@@ -7,7 +7,7 @@ Shows both simple and advanced attack scenarios:
 - Advanced: Indirect injection, social engineering, helpfulness exploitation
 
 Requirements:
-    pip install openai  # or anthropic
+    uv pip install openai  # or anthropic
 
 Usage:
     export OPENAI_API_KEY="your-key"

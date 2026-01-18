@@ -28,7 +28,7 @@ Tenuo integrates with OpenAI's APIs using a **two-tier** protection model:
 ## Installation
 
 ```bash
-pip install tenuo
+uv pip install tenuo
 ```
 
 ---

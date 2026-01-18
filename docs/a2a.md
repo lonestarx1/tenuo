@@ -35,7 +35,7 @@ Warrant says: "Agent B can only search arxiv.org for this task"
 ## Installation
 
 ```bash
-pip install "tenuo[a2a]"
+uv pip install "tenuo[a2a]"
 ```
 
 ---
@@ -323,7 +323,7 @@ server = A2AServerBuilder()
     .build()
 ```
 
-All formats are automatically normalized for comparison. Multibase and DID support requires `pip install base58`.
+All formats are automatically normalized for comparison. Multibase and DID support requires `uv pip install base58`.
 
 ---
 

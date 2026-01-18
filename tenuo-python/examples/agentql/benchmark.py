@@ -333,7 +333,7 @@ def benchmark_memory_usage():
         return per_agent_kb
 
     except ImportError:
-        print("\n⚠️  SKIP: psutil not installed. Install with: pip install psutil")
+        print("\n⚠️  SKIP: psutil not installed. Install with: uv pip install psutil")
         print("   Memory benchmarking requires psutil to measure memory usage.")
         return None
 

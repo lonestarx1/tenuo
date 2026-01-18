@@ -64,7 +64,7 @@ def navigate(url):
         raise SecurityError("Domain not allowed")
 ```
 
-This is Layer 1. It validates the string, not the effect. Problems:
+This validates the string, not the effect. Problems:
 - No delegation (can't give subset of `ALLOWED_DOMAINS` to sub-agent)
 - No audit trail (who granted this permission?)
 - Bypassable if validation skipped in any code path
@@ -74,7 +74,9 @@ This is Layer 1. It validates the string, not the effect. Problems:
 
 ## What Makes Tenuo Different
 
-Tenuo operates at **Layer 2**: cryptographic enforcement at execution time.
+Tenuo adds **cryptographic proof of authorization**: who granted this capability, can they delegate it, and does the holder have the right key?
+
+This is orthogonal to input validation. Validation asks "is this input safe?" Tenuo asks "is this action authorized by someone I trust?"
 
 | Property | Code-Based Auth | Tenuo |
 |----------|----------------|-------|
@@ -130,10 +132,10 @@ See [Capability Delegation](https://niyikiza.com/posts/capability-delegation/) f
 
 ## Summary
 
-**Layer 1** (validation) = Psychology. Analyzes syntax to predict semantics.  
-**Layer 2** (enforcement) = Physics. Enforces at execution with cryptographic proof.
+**Validation** = Psychology. Analyzes syntax to predict semantics. Can be bypassed.  
+**Cryptographic authorization** = Physics. Mathematical proof of who granted what to whom.
 
-Tenuo is Layer 2. Same security model as SSH, Bitcoin, TLS—not business logic.
+Tenuo uses the same security model as SSH, Bitcoin, and TLS—not business logic.
 
 ---
 

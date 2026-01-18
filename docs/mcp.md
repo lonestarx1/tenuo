@@ -9,12 +9,12 @@ Tenuo provides full Model Context Protocol (MCP) client integration with cryptog
 ## Prerequisites
 
 ```bash
-pip install tenuo
+uv pip install tenuo
 ```
 
 For the full LangChain + MCP example:
 ```bash
-pip install "tenuo[langchain]"
+uv pip install "tenuo[langchain]"
 ```
 
 ---
