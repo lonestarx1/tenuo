@@ -1,4 +1,4 @@
-from typing import Any, List, Dict, Callable
+from typing import Any, List, Dict, Callable, Optional
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import inspect
@@ -90,28 +90,35 @@ class TenuoAgentQLAgent:
         self.audit_log: List[AuditEntry] = []
         self.metrics = PerformanceMetrics()
 
-    def start_session(self, headless: bool = False, on_page_created: Callable = None):
-        try:
-            import agentql  # noqa: F401
-            from playwright.async_api import async_playwright  # noqa: F401
-        except ImportError as e:
-            raise ImportError(
-                "Real 'agentql' and 'playwright' libraries are required. "
-                "Please run: uv pip install agentql playwright"
-            ) from e
+    def start_session(self, headless: bool = False, on_page_created: Optional[Callable] = None,
+                      window_position: Optional[tuple] = None, window_size: Optional[tuple] = None,
+                      force_mock: bool = False):
+        if force_mock:
+            # Force mock mode for offline demos
+            from mock_agentql import MockSession
+            session: Any = MockSession()
+        else:
+            try:
+                import agentql  # type: ignore  # noqa: F401
+                from playwright.async_api import async_playwright  # noqa: F401
+                # Real AgentQL
+                session = RealAgentQLSession(
+                    headless=headless,
+                    on_page_created=on_page_created,
+                    window_position=window_position,
+                    window_size=window_size
+                )
+            except ImportError:
+                # Fall back to mock mode for offline demos
+                from mock_agentql import MockSession
+                session = MockSession()
 
-        # Real AgentQL
-        session = RealAgentQLSession(headless=headless, on_page_created=on_page_created)
-        # We need to initialize the session (start browser) before returning proxy
-        # because the proxy might be used immediately?
-        # Actually SecureContextProxy handles __aenter__ which calls session.__aenter__.
-        # So returning the session instance wrapped is correct.
         return SecureContextProxy(session, self)
 
 
 
 
-    def _log(self, action: str, target: str, allowed: bool, latency_ms: float, error: str = None):
+    def _log(self, action: str, target: str, allowed: bool, latency_ms: float, error: Optional[str] = None):
         """Log authorization decision with full context."""
         warrant_depth = getattr(self.warrant, 'depth', 0) if hasattr(self.warrant, 'depth') else 0
         warrant_id = str(self.warrant.id)[:12] if hasattr(self.warrant, 'id') else "unknown"
@@ -397,9 +404,12 @@ class SecureContextProxy(SecureProxy):
 
 class RealAgentQLSession:
     """Manages Playwright + AgentQL lifecycle."""
-    def __init__(self, headless: bool = False, on_page_created: Callable = None):
+    def __init__(self, headless: bool = False, on_page_created: Optional[Callable] = None,
+                 window_position: Optional[tuple] = None, window_size: Optional[tuple] = None):
         self.headless = headless
         self.on_page_created = on_page_created
+        self.window_position = window_position
+        self.window_size = window_size
         self.playwright = None
         self.browser = None
         self.page = None
@@ -409,7 +419,20 @@ class RealAgentQLSession:
         import agentql
 
         self.playwright = await async_playwright().start()
-        self.browser = await self.playwright.chromium.launch(headless=self.headless)
+
+        # Build launch args for window positioning
+        args = []
+        if self.window_position and not self.headless:
+            x, y = self.window_position
+            args.append(f'--window-position={x},{y}')
+        if self.window_size and not self.headless:
+            width, height = self.window_size
+            args.append(f'--window-size={width},{height}')
+
+        self.browser = await self.playwright.chromium.launch(
+            headless=self.headless,
+            args=args if args else None
+        )
         self.page = await self.browser.new_page()
 
         # Run hook if provided (e.g. to mock routes)

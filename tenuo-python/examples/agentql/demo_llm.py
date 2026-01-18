@@ -310,10 +310,10 @@ async def scenario_indirect_injection(provider):
         if 'sketchy' in str(action.get('args', {})):
             try:
                 await session.goto("https://auth-verify.sketchy-site.com/confirm")
-            except AuthorizationDenied:
+            except AuthorizationDenied as e:
                 print("      🛡️  TENUO BLOCKED IT!")
-                print("          LLM tried to follow the 'system alert'")
-                print("          but Tenuo rejected (not in warrant)\n")
+                print(f"          Engine: {format_denial_error(e)}")
+                print("          (Context: LLM tried to follow the 'system alert')\n")
 
 
 async def scenario_social_engineering(provider):
@@ -365,10 +365,10 @@ async def scenario_social_engineering(provider):
         if 'admin' in str(action.get('args', {})):
             try:
                 await session.goto("https://admin.duckduckgo.com/verify-user")
-            except AuthorizationDenied:
+            except AuthorizationDenied as e:
                 print("      🛡️  TENUO BLOCKED IT!")
-                print("          URL pattern only allows https://duckduckgo.com/*")
-                print("          Subdomain 'admin.duckduckgo.com' is NOT authorized.\n")
+                print(f"          Engine: {format_denial_error(e)}")
+                print("          (Context: Subdomain 'admin.duckduckgo.com' is NOT authorized)\n")
 
 
 async def scenario_delegation(provider):
@@ -444,7 +444,7 @@ async def scenario_delegation(provider):
                 await page.locator(f"{{ {element} }}").fill("delegation patterns")
                 print("  ✅ Authorized: Filled search_input\n")
              except AuthorizationDenied as e:
-                print(f"  ❌ Blocked: {e}\n")
+                print(f"  ❌ Blocked: {format_denial_error(e)}\n")
 
         print("▶ Intern: Attempting to access Settings (Blocked)...")
         print("   (Intern tries to click 'settings_icon' which is NOT in OneOf list)")
@@ -453,10 +453,10 @@ async def scenario_delegation(provider):
         # as getting LLM to consistently hallucinate 'settings' on DDG is tricky without a long prompt.
         try:
              await page.locator("{ settings_icon }").click()
-        except AuthorizationDenied:
+        except AuthorizationDenied as e:
              print("  🛡️  TENUO BLOCKED IT!")
-             print("      Intern tried to click 'settings_icon'")
-             print("      Warrant only allows: ['search_button']\n")
+             print(f"      Engine: {format_denial_error(e)}")
+             print("      (Context: Intern tried to click 'settings_icon'. Warrant allows: ['search_button'])\n")
         else:
              print("  ⚠️ Unexpected success (should have been blocked)\n")
 
@@ -524,7 +524,7 @@ async def scenario_dlp(provider):
             print("  ❌ Failed: Agent was allowed to extract PII!")
         except AuthorizationDenied as e:
             print("  🚫 Tenuo Blocked Data Exfiltration!")
-            print(f"     Reason: {e}")
+            print(f"     Reason: {format_denial_error(e)}")
 
     print("✅ DLP SCENARIO COMPLETE\n")
 

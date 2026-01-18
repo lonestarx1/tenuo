@@ -1,12 +1,26 @@
 # Tenuo Wire Format Specification
 
-**Version:** 1.0.1  
-**Status:** Normative  
-**Date:** 2026-01-16  
+**Version:** 1.0
+**Status:** Normative
+**Date:** 2025-01-01
+**Documentation Revision:** 2 (2026-01-18)
 
 **Related Documents:**
 - [protocol-spec-v1.md](protocol-spec-v1.md) - Protocol Specification (concepts, invariants, algorithms)
 - [test-vectors.md](test-vectors.md) - Byte-exact test vectors for validation
+
+---
+
+## Revision History
+
+- **Rev 2** (2026-01-18): Documentation cleanup
+  - One reference max_windows table
+  - Added cross-references between test vectors and full constraint type list
+  - Regenerated test vectors to match generator output
+  - Clarified approval envelope structure to match warrant envelope pattern
+  - **No protocol changes** - wire format remains v1.0
+
+- **Rev 1** (2025-01-01): Initial release
 
 ---
 

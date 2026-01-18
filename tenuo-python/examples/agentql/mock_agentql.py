@@ -25,14 +25,23 @@ class MockPage:
         return MockLocator(alias)
 
 class MockSession:
+    """Mock session that acts like an AgentQL-wrapped page."""
     def __init__(self):
         self.driver = self
         self.url = "about:blank"
 
-    async def goto(self, url: str) -> MockPage:
+    async def goto(self, url: str):
         await asyncio.sleep(0.2)
         self.url = url
-        return MockPage(url)
+        # Return None like real Playwright (goto returns Response, not Page)
+        return None
+
+    async def click(self, alias: str):
+        await asyncio.sleep(0.1)
+        pass
+
+    def locator(self, alias: str) -> MockLocator:
+        return MockLocator(alias)
 
     async def __aenter__(self):
         return self

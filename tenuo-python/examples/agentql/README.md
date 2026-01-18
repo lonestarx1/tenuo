@@ -31,19 +31,28 @@ uv pip install -e .   # or: pip install -e .
 
 **No additional dependencies needed!** The mock demo works with just Tenuo installed.
 
+![Tenuo Demo](demo.gif)
+
 ```bash
-# Run the mock demo
+# Run the interactive demo
 python demo.py
 
-# See 5 scenarios in ~2 minutes:
+# The demo walks through 5 scenarios interactively:
 # - ACT 1: Authorization visualization
 # - ACT 2: Legitimate actions
 # - ACT 3: Prompt injection attack (BLOCKED)
 # - ACT 4: Why this isn't just if-else statements
 # - ACT 5: Multi-agent delegation
+#
+# Press Enter between acts to proceed at your own pace
+# Natural pauses after each action for readability
 ```
 
+---
+
 ### Option 2: Real LLM Demo
+
+https://github.com/user-attachments/assets/59f6aad0-5d66-4530-bd9e-8bff24403ef1
 
 **Requirements:**
 - Python 3.8+
@@ -89,7 +98,7 @@ python demo_llm.py --dlp         # Data loss prevention
 | **Audit Trail** | Every action logged with warrant chain provenance |
 | **Decentralized** | Verification is offline, no auth server needed |
 
-**Performance**: **0.004ms** per check, **268,000+ checks/sec**, <0.03% overhead (see [PERFORMANCE.md](PERFORMANCE.md))
+**Performance**: **0.004ms** (logic only), **0.027ms** (full crypto verification). <0.03% overhead.
 
 ---
 

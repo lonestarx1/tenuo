@@ -1,8 +1,20 @@
 # Tenuo Protocol Test Vectors
 
-**Version:** 1.0  
-**Generated:** 2024-01-01 (deterministic timestamps for reproducibility)  
-**Specification:** [protocol-spec-v1.md](protocol-spec-v1.md)
+**Version:** 1.0
+**Documentation Revision:** 2 (2026-01-18)
+**Generated:** 2024-01-01 (deterministic timestamps for reproducibility)
+**Specification:** [wire-format-v1.md](wire-format-v1.md)
+
+---
+
+## Revision History
+
+- **Rev 2** (2026-01-18): Documentation cleanup
+  - Regenerated all test vectors to match current generator output
+  - Added cross-reference note to full constraint type list in wire-format-v1.md
+  - **No protocol changes** - test vectors remain v1.0 compatible
+
+- **Rev 1** (2025-01-01): Initial release
 
 ---
 
