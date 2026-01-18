@@ -234,10 +234,10 @@ else:
     # These stubs have different signatures because they only raise ImportError.
     # This is the standard pattern for optional dependencies.
     def get_warrant_header(*args: Any, **kwargs: Any) -> Any:  # type: ignore[misc]
-        raise ImportError("FastAPI is not installed. Install with: pip install fastapi")
+        raise ImportError("FastAPI is not installed. Install with: uv pip install fastapi")
 
     def require_warrant(*args: Any, **kwargs: Any) -> Any:  # type: ignore[misc]
-        raise ImportError("FastAPI is not installed. Install with: pip install fastapi")
+        raise ImportError("FastAPI is not installed. Install with: uv pip install fastapi")
 
 
 # =============================================================================

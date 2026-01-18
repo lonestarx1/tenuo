@@ -142,7 +142,7 @@ else
     echo "To enable Python checks:"
     echo "  1. python3 -m venv .venv"
     echo "  2. source .venv/bin/activate"
-    echo "  3. pip install maturin pytest ruff mypy langchain langchain-core langchain-openai fastapi uvicorn pydantic PyYAML types-PyYAML types-requests"
+    echo "  3. uv pip install maturin pytest ruff mypy langchain langchain-core langchain-openai fastapi uvicorn pydantic PyYAML types-PyYAML types-requests"
     echo "  4. cd tenuo-python && maturin develop"
 fi
 
