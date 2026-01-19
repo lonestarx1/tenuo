@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import functools
+import importlib.util
 import inspect
 import json
 import logging
@@ -39,13 +40,8 @@ from .exceptions import (
 )
 from .validation import ValidationResult
 
-# Optional AutoGen import (best-effort, for feature detection only)
-try:
-    import autogen_agentchat  # type: ignore
-
-    AUTOGEN_AVAILABLE = True
-except Exception:
-    AUTOGEN_AVAILABLE = False
+# Optional AutoGen availability check (best-effort, for feature detection only)
+AUTOGEN_AVAILABLE = importlib.util.find_spec("autogen_agentchat") is not None
 
 logger = logging.getLogger("tenuo.autogen")
 
