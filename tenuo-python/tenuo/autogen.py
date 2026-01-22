@@ -183,7 +183,9 @@ def _ensure_authorized_bound(
 
 
 def _check_constraints(
-    tool_name: str, constraints: Dict[str, Any], auth_args: Dict[str, Any]
+    tool_name: str,
+    constraints: Optional[Dict[str, Any]],
+    auth_args: Dict[str, Any],
 ) -> None:
     """
     Tier 1 constraint enforcement (closed-world).
@@ -387,15 +389,21 @@ class _Guard:
         if isinstance(tools, Mapping):
             out: dict[str, Any] = {}
             for name, tool in tools.items():
-                tn = tool_name_fn(tool) if tool_name_fn else name
-                out[name] = self.guard_tool(tool, tool_name=tn)
+                resolved_name_map = (
+                    tool_name_fn(tool) if tool_name_fn else name
+                )
+                out[name] = self.guard_tool(tool, tool_name=resolved_name_map)
             return out
 
         if isinstance(tools, Sequence):
             out_list: list[Any] = []
             for tool in tools:
-                tn = tool_name_fn(tool) if tool_name_fn else None
-                out_list.append(self.guard_tool(tool, tool_name=tn))
+                resolved_name_list = (
+                    tool_name_fn(tool) if tool_name_fn else None
+                )
+                out_list.append(
+                    self.guard_tool(tool, tool_name=resolved_name_list)
+                )
             return out_list
 
         raise TypeError(
