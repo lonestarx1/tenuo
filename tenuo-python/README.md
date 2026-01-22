@@ -349,6 +349,24 @@ agent = Agent(
 
 For Tier 2 (warrant + PoP) and multi-agent scenarios, see [Google ADK Integration](https://tenuo.dev/google-adk).
 
+## AutoGen Integration
+
+_(Requires Python ≥3.10)_
+
+Install dependencies:
+
+```bash
+pip install "tenuo[autogen]" "python-dotenv"
+```
+
+Demos:
+
+- `examples/autogen_demo_unprotected.py` - agentic workflow with no protections
+- `examples/autogen_demo_protected_tools.py` - guarded tools (URL allowlist + Subpath)
+- `examples/autogen_demo_protected_attenuation.py` - per-agent attenuation + escalation block
+
+> Tip: these demos use `python-dotenv` to load `OPENAI_API_KEY` and set `tool_choice="required"` for deterministic tool calls.
+
 ## A2A Integration (Multi-Agent)
 
 Warrant-based authorization for agent-to-agent communication:
@@ -481,24 +499,6 @@ async with SecureMCPClient("python", ["mcp_server.py"]) as client:
     async with mint(Capability("read_file", path=Subpath("/data"))):
         result = await tools["read_file"](path="/data/file.txt")
 ```
-
-## AutoGen Integration
-
-_(Requires Python ≥3.10)_
-
-Install dependencies:
-
-```bash
-pip install "tenuo[autogen]" "python-dotenv"
-```
-
-Demos:
-
-- `examples/autogen_demo_unprotected.py` - agentic workflow with no protections
-- `examples/autogen_demo_protected_tools.py` - guarded tools (URL allowlist + Subpath)
-- `examples/autogen_demo_protected_attenuation.py` - per-agent attenuation + escalation block
-
-> Tip: these demos use `python-dotenv` to load `OPENAI_API_KEY` and set `tool_choice="required"` for deterministic tool calls.
 
 ## Security Considerations
 
