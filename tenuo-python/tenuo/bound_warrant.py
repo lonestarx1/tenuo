@@ -265,17 +265,13 @@ class BoundWarrant:
             else:
                 print(f"Validation failed: {result.reason}")
         """
-        try:
-            # 1. Sign
-            pop_signature = self._warrant.sign(self._key, tool, args)
+        # 1. Sign
+        pop_signature = self._warrant.sign(self._key, tool, args)
 
-            # 2. Verify (calls Rust authorize)
-            success = self._warrant.authorize(
-                tool=tool, args=args, signature=bytes(pop_signature)
-            )
-        except Exception as exc:
-            # For expired warrants (or other validation failures), surface as a failed ValidationResult
-            return ValidationResult.fail(reason=str(exc))
+        # 2. Verify (calls Rust authorize)
+        success = self._warrant.authorize(
+            tool=tool, args=args, signature=bytes(pop_signature)
+        )
 
         if success:
             return ValidationResult.ok()
