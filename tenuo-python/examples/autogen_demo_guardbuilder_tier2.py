@@ -19,7 +19,7 @@ Run:
     python autogen_demo_guardbuilder_tier2.py compare
 
 Requires:
-    pip install "tenuo[autogen]" "python-dotenv"
+    uv pip install "tenuo[autogen]" "python-dotenv"
     # Set OPENAI_API_KEY (env or .env file)
 """
 
@@ -34,7 +34,7 @@ try:
     from dotenv import load_dotenv  # type: ignore[reportMissingImports]
 except Exception as e:  # pragma: no cover - optional dep guard
     print(f"Error: Missing dependency - {e}")
-    print('Install with: pip install "python-dotenv"')
+    print('Install with: uv pip install "python-dotenv"')
     raise
 
 try:
@@ -42,7 +42,7 @@ try:
     from autogen_ext.models.openai import OpenAIChatCompletionClient
 except Exception as e:  # pragma: no cover - optional dep guard
     print(f"Error: Missing dependency - {e}")
-    print('Install with: pip install "tenuo[autogen]"')
+    print('Install with: uv pip install "tenuo[autogen]"')
     raise
 
 from tenuo import SigningKey, Subpath, UrlSafe, Warrant

@@ -356,7 +356,7 @@ _(Requires Python ≥3.10)_
 Install dependencies:
 
 ```bash
-pip install "tenuo[autogen]" "python-dotenv"
+uv pip install "tenuo[autogen]" "python-dotenv"
 ```
 
 Demos:

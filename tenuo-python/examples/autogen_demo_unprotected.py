@@ -19,7 +19,7 @@ Run:
     python autogen_demo.py attack
 
 Requires:
-    pip install "tenuo[autogen]"
+    uv pip install "tenuo[autogen]"
     # Set OPENAI_API_KEY
 """
 
@@ -35,7 +35,7 @@ try:
     from dotenv import load_dotenv  # type: ignore[reportMissingImports]
 except Exception as e:  # pragma: no cover - import guard for optional deps
     print(f"Error: Missing dependency - {e}")
-    print('Install with: pip install "python-dotenv"')
+    print('Install with: uv pip install "python-dotenv"')
     raise
 
 try:
@@ -43,7 +43,7 @@ try:
     from autogen_ext.models.openai import OpenAIChatCompletionClient
 except Exception as e:  # pragma: no cover - import guard for optional deps
     print(f"Error: Missing dependency - {e}")
-    print('Install with: pip install "tenuo[autogen]"')
+    print('Install with: uv pip install "tenuo[autogen]"')
     raise
 
 
