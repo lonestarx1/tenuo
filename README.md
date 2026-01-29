@@ -35,10 +35,6 @@ pip install tenuo
 <a href="https://tenuo.dev/demo.html"><img src="https://img.shields.io/badge/Docker_Demo-delegation_chain-a855f7" alt="Docker Demo"></a>
 <a href="https://niyikiza.com/posts/tenuo-launch/"><img src="https://img.shields.io/badge/Blog-Why_Tenuo%3F-ff6b6b" alt="Blog"></a>
 
-<p align="center">
-  <strong>Deploying agents in production?</strong> <a href="https://calendly.com/tenuo/30min">Book a call</a>
-</p>
-
 ## Quick Start
 
 ```python
@@ -309,6 +305,12 @@ Contributions welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
 We're planning a TypeScript/Node SDK for v0.2. If you're interested in leading or contributing to this effort, open an issue or email us at [dev@tenuo.dev](mailto:dev@tenuo.dev).
 
 **Security issues**: Email security@tenuo.dev with PGP ([key](./SECURITY_PUBKEY.asc), not public issues).
+
+---
+
+## Deploying Agents in Production?
+
+We'd love to help. [Book a call](https://calendly.com/tenuo/30min) to discuss your use case.
 
 ---
 
