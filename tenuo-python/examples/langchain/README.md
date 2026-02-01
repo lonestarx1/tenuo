@@ -93,7 +93,7 @@ LangGraph agents calling MCP servers. Shows:
 
 ## Learn More
 
-- [Tenuo Documentation](https://tenuo.dev)
+- [Tenuo Documentation](https://tenuo.ai)
 - [LangChain Docs](https://python.langchain.com/)
 - [LangGraph Docs](https://langchain-ai.github.io/langgraph/)
 - [Main Examples README](../README.md)

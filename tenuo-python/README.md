@@ -22,7 +22,7 @@ uv pip install "tenuo[mcp]"           # + MCP client (Python ≥3.10)
 ```
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/tenuo-ai/tenuo/blob/main/notebooks/tenuo_demo.ipynb)
-[![Explorer](https://img.shields.io/badge/Explorer-decode_warrants-00d4ff)](https://tenuo.dev/explorer/)
+[![Explorer](https://img.shields.io/badge/Explorer-decode_warrants-00d4ff)](https://tenuo.ai/explorer/)
 
 ## Development
 
@@ -324,7 +324,7 @@ response = client.chat.completions.create(
 | `Pattern(glob)` | Glob pattern matching | `Pattern("*@company.com")` |
 | `UrlPattern(url)` | URL matching. **Note**: `https://example.com/` (trailing slash) parses as Wildcard ("Any Path"). Use `/*` to restrict to root. | `UrlPattern("https://*.example.com/*")` |
 
-For Tier 2 (cryptographic authorization with warrants), see [OpenAI Integration](https://tenuo.dev/openai).
+For Tier 2 (cryptographic authorization with warrants), see [OpenAI Integration](https://tenuo.ai/openai).
 
 ## Google ADK Integration
 
@@ -347,7 +347,7 @@ agent = Agent(
 )
 ```
 
-For Tier 2 (warrant + PoP) and multi-agent scenarios, see [Google ADK Integration](https://tenuo.dev/google-adk).
+For Tier 2 (warrant + PoP) and multi-agent scenarios, see [Google ADK Integration](https://tenuo.ai/google-adk).
 
 ## A2A Integration (Multi-Agent)
 
@@ -369,7 +369,7 @@ async def search_papers(query: str, sources: list[str]) -> list[dict]:
     return await do_search(query, sources)
 ```
 
-See [A2A Integration](https://tenuo.dev/a2a) for full documentation.
+See [A2A Integration](https://tenuo.ai/a2a) for full documentation.
 
 ## LangGraph Integration
 
@@ -562,15 +562,15 @@ python examples/mcp_integration.py
 
 ## Documentation
 
-- **[Quickstart](https://tenuo.dev/quickstart)** - Get running in 5 minutes
-- **[OpenAI](https://tenuo.dev/openai)** - Direct API protection with streaming defense
-- **[Google ADK](https://tenuo.dev/google-adk)** - ADK agent tool protection
-- **[A2A](https://tenuo.dev/a2a)** - Inter-agent delegation with warrants
-- **[FastAPI](https://tenuo.dev/fastapi)** - Zero-boilerplate API protection
-- **[LangChain](https://tenuo.dev/langchain)** - Tool protection
-- **[LangGraph](https://tenuo.dev/langgraph)** - Multi-agent security
-- **[Security](https://tenuo.dev/security)** - Threat model, best practices
-- **[API Reference](https://tenuo.dev/api-reference)** - Full SDK docs
+- **[Quickstart](https://tenuo.ai/quickstart)** - Get running in 5 minutes
+- **[OpenAI](https://tenuo.ai/openai)** - Direct API protection with streaming defense
+- **[Google ADK](https://tenuo.ai/google-adk)** - ADK agent tool protection
+- **[A2A](https://tenuo.ai/a2a)** - Inter-agent delegation with warrants
+- **[FastAPI](https://tenuo.ai/fastapi)** - Zero-boilerplate API protection
+- **[LangChain](https://tenuo.ai/langchain)** - Tool protection
+- **[LangGraph](https://tenuo.ai/langgraph)** - Multi-agent security
+- **[Security](https://tenuo.ai/security)** - Threat model, best practices
+- **[API Reference](https://tenuo.ai/api-reference)** - Full SDK docs
 
 ## License
 

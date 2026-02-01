@@ -5,7 +5,7 @@ description: Why Tenuo? Problem/solution, threat model, core invariants
 
 # Tenuo Concepts
 
-This page explains the problem Tenuo solves and the core ideas behind it. For a visual walkthrough, see the [Demo](./demo.html), [Architecture Infographic](./architecture-infographic.html), or try the [Explorer Playground](https://tenuo.dev/explorer/) to decode warrants interactively.
+This page explains the problem Tenuo solves and the core ideas behind it. For a visual walkthrough, see the [Demo](./demo.html), [Architecture Infographic](./architecture-infographic.html), or try the [Explorer Playground](https://tenuo.ai/explorer/) to decode warrants interactively.
 
 ## The Problem
 

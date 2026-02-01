@@ -76,6 +76,6 @@ These examples demonstrate common security constraints:
 
 ## Learn More
 
-- [Tenuo Documentation](https://tenuo.dev)
+- [Tenuo Documentation](https://tenuo.ai)
 - [OpenAI API Reference](https://platform.openai.com/docs)
 - [Main Examples README](../README.md)
