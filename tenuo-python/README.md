@@ -347,7 +347,25 @@ agent = Agent(
 )
 ```
 
-For Tier 2 (warrant + PoP) and multi-agent scenarios, see [Google ADK Integration](https://tenuo.ai/google-adk).
+For Tier 2 (warrant + PoP) and multi-agent scenarios, see [Google ADK Integration](https://tenuo.dev/google-adk).
+
+## AutoGen Integration
+
+_(Requires Python ≥3.10)_
+
+Install dependencies:
+
+```bash
+uv pip install "tenuo[autogen]" "python-dotenv"
+```
+
+Demos:
+
+- `examples/autogen_demo_unprotected.py` - agentic workflow with no protections
+- `examples/autogen_demo_protected_tools.py` - guarded tools (URL allowlist + Subpath)
+- `examples/autogen_demo_protected_attenuation.py` - per-agent attenuation + escalation block
+
+> Tip: these demos use `python-dotenv` to load `OPENAI_API_KEY` and set `tool_choice="required"` for deterministic tool calls.
 
 ## A2A Integration (Multi-Agent)
 
@@ -562,15 +580,16 @@ python examples/mcp_integration.py
 
 ## Documentation
 
-- **[Quickstart](https://tenuo.ai/quickstart)** - Get running in 5 minutes
-- **[OpenAI](https://tenuo.ai/openai)** - Direct API protection with streaming defense
-- **[Google ADK](https://tenuo.ai/google-adk)** - ADK agent tool protection
-- **[A2A](https://tenuo.ai/a2a)** - Inter-agent delegation with warrants
-- **[FastAPI](https://tenuo.ai/fastapi)** - Zero-boilerplate API protection
-- **[LangChain](https://tenuo.ai/langchain)** - Tool protection
-- **[LangGraph](https://tenuo.ai/langgraph)** - Multi-agent security
-- **[Security](https://tenuo.ai/security)** - Threat model, best practices
-- **[API Reference](https://tenuo.ai/api-reference)** - Full SDK docs
+- **[Quickstart](https://tenuo.dev/quickstart)** - Get running in 5 minutes
+- **[OpenAI](https://tenuo.dev/openai)** - Direct API protection with streaming defense
+- **[Google ADK](https://tenuo.dev/google-adk)** - ADK agent tool protection
+- **[AutoGen](https://tenuo.dev/autogen)** - AgentChat tool protection
+- **[A2A](https://tenuo.dev/a2a)** - Inter-agent delegation with warrants
+- **[FastAPI](https://tenuo.dev/fastapi)** - Zero-boilerplate API protection
+- **[LangChain](https://tenuo.dev/langchain)** - Tool protection
+- **[LangGraph](https://tenuo.dev/langgraph)** - Multi-agent security
+- **[Security](https://tenuo.dev/security)** - Threat model, best practices
+- **[API Reference](https://tenuo.dev/api-reference)** - Full SDK docs
 
 ## License
 
