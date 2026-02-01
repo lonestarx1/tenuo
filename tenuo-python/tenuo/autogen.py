@@ -552,10 +552,7 @@ class _Guard:
             logger.warning(
                 "Authorization denied (%s): %s", type(exc).__name__, exc
             )
-            result = fn(*args, **kwargs)
-            if is_async and inspect.isawaitable(result):
-                return result
-            return result
+            return None
         # skip
         logger.debug("Authorization denied (skip): %s", exc)
         return None
