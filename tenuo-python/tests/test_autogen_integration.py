@@ -293,20 +293,27 @@ class TestGuardBuilderTier1:
 
         assert wrapped[0](query="ok") == "internal:ok"
 
-    def test_on_denial_log_allows_execution(self, caplog):
-        """on_denial=log allows execution and logs warning."""
+    def test_on_denial_log_skips_execution(self, caplog):
+        """on_denial=log skips execution and logs warning."""
+        calls: list[str] = []
+
+        def tracking_tool(query: str) -> str:
+            calls.append(query)
+            return f"results:{query}:0"
+
         guard = (
             GuardBuilder()
             .allow("search", query=Pattern("ok*"))
             .on_denial("log")
             .build()
         )
-        guarded = guard.guard_tool(search, tool_name="search")
+        guarded = guard.guard_tool(tracking_tool, tool_name="search")
 
         with caplog.at_level(logging.WARNING):
             result = guarded(query="nope")
 
-        assert result == "results:nope:0"
+        assert result is None
+        assert calls == []
         assert "denied" in caplog.text.lower()
 
     def test_on_denial_skip_returns_none(self):
@@ -1064,8 +1071,14 @@ class TestGuardBuilderTier2:
         with pytest.raises(AuthorizationDenied):
             guarded(operation="multiply")
 
-    def test_tier2_on_denial_log_allows_execution(self, caplog):
-        """on_denial=log should allow execution with PoP."""
+    def test_tier2_on_denial_log_skips_execution(self, caplog):
+        """on_denial=log should skip execution with PoP."""
+        calls: list[str] = []
+
+        def tracking_tool(query: str) -> str:
+            calls.append(query)
+            return f"results:{query}:0"
+
         key = SigningKey.generate()
         warrant = (
             Warrant.mint_builder()
@@ -1077,12 +1090,13 @@ class TestGuardBuilderTier2:
         guard = (
             GuardBuilder().with_warrant(warrant, key).on_denial("log").build()
         )
-        guarded = guard.guard_tool(search, tool_name="search")
+        guarded = guard.guard_tool(tracking_tool, tool_name="search")
 
         with caplog.at_level(logging.WARNING):
             result = guarded(query="nope")
 
-        assert result == "results:nope:0"
+        assert result is None
+        assert calls == []
         assert "denied" in caplog.text.lower()
 
     def test_tier2_on_denial_skip_returns_none(self):
