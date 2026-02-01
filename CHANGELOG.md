@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.1.0-beta.7] - 2026-01-18
 
+### Added
+
+#### AutoGen Integration (`tenuo[autogen]`)
+- **GuardBuilder API**: Fluent builder for protecting AutoGen AgentChat tools with Tenuo authorization
+- **Tier 1 (constraints-only)**: Lightweight validation using `GuardBuilder().allow("tool", arg=Constraint).build()`
+- **Tier 2 (warrant + PoP)**: Cryptographic enforcement with `with_warrant(warrant, signing_key)`
+- **Streaming TOCTOU protection**: Buffer-verify-emit strategy via `guard_stream()` prevents time-of-check time-of-use attacks
+- **Flexible argument extraction**: Handles dicts, Pydantic models, dataclasses, and positional/keyword args
+- **`on_denial` modes**: `raise` (default), `log`, or `skip` for flexible error handling
+- **5 demo files**: Unprotected baseline, protected tools, attenuation, GuardBuilder Tier 1/2
+
 ### Core & Protocol
 - **Approval Envelope**: Refactored `Approval` to use the `SignedApproval` envelope pattern (separating `ApprovalPayload` from signature), aligning with the v1.0 spec and matching the Warrant architecture.
 - **Protocol Parity**: Synchronized `tenuo-core` with v1.0 spec, updating `WarrantType` serialization to integers (CBOR) and reconciling all test vectors.
@@ -17,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **CI Stability**: Fixed "No virtual environment" errors in GitHub Actions by using `--system` flag with `uv pip install`.
 
 ### Documentation
+- **AutoGen Integration**: Added `docs/autogen.md` guide and 5 example demos
 - **AgentQL Integration**: Added AgentQL integration examples.
 - **Example consistency**: Standardized all `pip install` instructions in examples and notebooks to use `uv pip install`.
 
