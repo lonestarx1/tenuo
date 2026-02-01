@@ -308,9 +308,9 @@ We're planning a TypeScript/Node SDK for v0.2. If you're interested in leading o
 
 ---
 
-## Deploying Agents in Production?
+## Questions?
 
-We'd love to help. [Book a call](https://calendly.com/tenuo/30min) to discuss your use case.
+Open an issue on GitHub or email [team@tenuo.ai](mailto:team@tenuo.ai).
 
 ---
 
