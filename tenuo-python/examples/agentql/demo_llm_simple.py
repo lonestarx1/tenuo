@@ -18,7 +18,8 @@ async def demo():
     user_key = SigningKey.generate()
     agent_key = SigningKey.generate()
 
-    warrant = (
+    # Create warrant for the agent (would be used in real integration)
+    _warrant = (
         Warrant.mint_builder()
         .capability("navigate", url=UrlPattern("https://duckduckgo.com/*"))
         .capability("fill", element=OneOf(["search_box"]))
