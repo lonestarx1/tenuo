@@ -134,6 +134,7 @@ uv pip install "tenuo[a2a]"           # + A2A (inter-agent delegation)
 uv pip install "tenuo[fastapi]"       # + FastAPI integration
 uv pip install "tenuo[langchain]"     # + LangChain (langchain-core ≥0.2)
 uv pip install "tenuo[langgraph]"     # + LangGraph (includes LangChain)
+uv pip install "tenuo[autogen]"       # + AutoGen AgentChat (Python ≥3.10)
 uv pip install "tenuo[mcp]"           # + MCP client (Python ≥3.10 required)
 ```
 
@@ -234,6 +235,7 @@ See [Helm chart README](./charts/tenuo-authorizer) and [Kubernetes guide](https:
 | **[Concepts](https://tenuo.ai/concepts)** | Why capability tokens? |
 | **[OpenAI](https://tenuo.ai/openai)** | Direct API protection with streaming |
 | **[Google ADK](https://tenuo.ai/google-adk)** | ADK agent tool protection |
+| **[AutoGen](https://tenuo.ai/autogen)** | AgentChat tool protection |
 | **[A2A](https://tenuo.ai/a2a)** | Inter-agent delegation |
 | **[FastAPI](https://tenuo.ai/fastapi)** | Zero-boilerplate API protection |
 | **[LangChain](https://tenuo.ai/langchain)** | Tool protection |
@@ -266,6 +268,7 @@ See [Related Work](https://tenuo.ai/related-work) for detailed comparison.
 | Feature | Status |
 |---------|--------|
 | A2A integration | Implemented (`uv pip install tenuo[a2a]`) |
+| AutoGen integration | Implemented (`uv pip install tenuo[autogen]`) |
 | Google ADK integration | Implemented (`uv pip install tenuo[google_adk]`) |
 | Multi-sig approvals | Partial (notary in v0.2) |
 | TypeScript/Node SDK | Planned for v0.2 |
