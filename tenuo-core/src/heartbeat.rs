@@ -25,9 +25,11 @@ use crate::revocation::SignedRevocationList;
 use crate::PublicKey;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
-use tokio::sync::{mpsc, RwLock};
+use std::time::{Duration, Instant};
+use tokio::sync::{mpsc, Mutex, RwLock};
 use tokio::time::interval;
 use tracing::{debug, info, warn};
 
@@ -142,6 +144,436 @@ pub fn create_audit_channel(
 }
 
 // ============================================================================
+// Runtime Metrics (sent with each heartbeat)
+// ============================================================================
+
+/// Runtime metrics collected and sent with each heartbeat.
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct RuntimeMetrics {
+    /// Uptime in seconds since authorizer started
+    pub uptime_seconds: u64,
+    /// Total requests since startup
+    pub requests_total: u64,
+    /// Requests since last heartbeat
+    pub requests_since_last: u64,
+    /// Average latency in microseconds (since last heartbeat)
+    pub avg_latency_us: u64,
+    /// P99 latency in microseconds (since last heartbeat)
+    pub p99_latency_us: u64,
+    /// Current memory usage in bytes (approximate)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub memory_bytes: Option<u64>,
+}
+
+/// Aggregate statistics sent with each heartbeat (reduces event volume).
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct HeartbeatStats {
+    /// Number of allowed requests since last heartbeat
+    pub allow_count: u64,
+    /// Number of denied requests since last heartbeat
+    pub deny_count: u64,
+    /// Top denial reasons with counts (max 10)
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub top_deny_reasons: Vec<(String, u64)>,
+    /// Top tools/actions with counts (max 10)
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub top_actions: Vec<(String, u64)>,
+    /// Number of unique principals seen since last heartbeat
+    pub unique_principals: u64,
+    /// Number of unique warrants seen since last heartbeat
+    pub unique_warrants: u64,
+}
+
+/// SRL synchronization health status.
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct SrlHealth {
+    /// Last successful SRL fetch timestamp (ISO 8601)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_fetch_at: Option<String>,
+    /// Whether the last fetch attempt succeeded
+    pub last_fetch_success: bool,
+    /// Total fetch failures since startup
+    pub fetch_failures_total: u64,
+    /// Total SRL verification failures since startup
+    pub verification_failures_total: u64,
+    /// Current SRL version (0 if none loaded)
+    pub current_srl_version: u64,
+}
+
+/// Environment information sent during registration.
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct EnvironmentInfo {
+    // Kubernetes context
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub k8s_namespace: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub k8s_pod_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub k8s_node_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub k8s_cluster: Option<String>,
+
+    // Cloud context
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cloud_provider: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cloud_region: Option<String>,
+
+    // Deployment context
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub environment: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deploy_id: Option<String>,
+}
+
+impl EnvironmentInfo {
+    /// Create environment info from standard environment variables.
+    pub fn from_env() -> Self {
+        Self {
+            // Kubernetes (standard downward API env vars)
+            k8s_namespace: std::env::var("TENUO_K8S_NAMESPACE")
+                .or_else(|_| std::env::var("POD_NAMESPACE"))
+                .ok(),
+            k8s_pod_name: std::env::var("TENUO_K8S_POD_NAME")
+                .or_else(|_| std::env::var("POD_NAME"))
+                .or_else(|_| std::env::var("HOSTNAME"))
+                .ok(),
+            k8s_node_name: std::env::var("TENUO_K8S_NODE_NAME")
+                .or_else(|_| std::env::var("NODE_NAME"))
+                .ok(),
+            k8s_cluster: std::env::var("TENUO_K8S_CLUSTER").ok(),
+
+            // Cloud
+            cloud_provider: std::env::var("TENUO_CLOUD_PROVIDER").ok(),
+            cloud_region: std::env::var("TENUO_CLOUD_REGION")
+                .or_else(|_| std::env::var("AWS_REGION"))
+                .or_else(|_| std::env::var("GOOGLE_CLOUD_REGION"))
+                .ok(),
+
+            // Deployment
+            environment: std::env::var("TENUO_ENVIRONMENT")
+                .or_else(|_| std::env::var("ENV"))
+                .or_else(|_| std::env::var("ENVIRONMENT"))
+                .ok(),
+            deploy_id: std::env::var("TENUO_DEPLOY_ID")
+                .or_else(|_| std::env::var("BUILD_ID"))
+                .or_else(|_| std::env::var("CI_COMMIT_SHA"))
+                .ok(),
+        }
+    }
+}
+
+// ============================================================================
+// Shared Metrics State (updated by request handlers)
+// ============================================================================
+
+/// Shared metrics state that can be updated by request handlers.
+/// Clone and pass to handlers; updates are thread-safe.
+#[derive(Clone)]
+pub struct MetricsCollector {
+    inner: Arc<MetricsCollectorInner>,
+}
+
+struct MetricsCollectorInner {
+    start_time: Instant,
+    requests_total: AtomicU64,
+    requests_since_last: AtomicU64,
+    allow_count: AtomicU64,
+    deny_count: AtomicU64,
+
+    // Latency tracking (circular buffer for p99)
+    latencies: Mutex<LatencyTracker>,
+
+    // Aggregation maps (protected by mutex)
+    deny_reasons: Mutex<HashMap<String, u64>>,
+    actions: Mutex<HashMap<String, u64>>,
+    principals: Mutex<std::collections::HashSet<String>>,
+    warrants: Mutex<std::collections::HashSet<String>>,
+
+    // SRL health
+    srl_last_fetch_at: Mutex<Option<String>>,
+    srl_last_fetch_success: AtomicU64, // 0 = false, 1 = true
+    srl_fetch_failures: AtomicU64,
+    srl_verification_failures: AtomicU64,
+    srl_current_version: AtomicU64,
+}
+
+/// Simple latency tracker with circular buffer for percentile estimation.
+struct LatencyTracker {
+    buffer: Vec<u64>,
+    index: usize,
+    total_sum: u64,
+    total_count: u64,
+}
+
+impl LatencyTracker {
+    fn new(capacity: usize) -> Self {
+        Self {
+            buffer: Vec::with_capacity(capacity),
+            index: 0,
+            total_sum: 0,
+            total_count: 0,
+        }
+    }
+
+    fn record(&mut self, latency_us: u64) {
+        self.total_sum += latency_us;
+        self.total_count += 1;
+
+        if self.buffer.len() < self.buffer.capacity() {
+            self.buffer.push(latency_us);
+        } else {
+            self.buffer[self.index] = latency_us;
+            self.index = (self.index + 1) % self.buffer.capacity();
+        }
+    }
+
+    fn avg(&self) -> u64 {
+        if self.total_count == 0 {
+            0
+        } else {
+            self.total_sum / self.total_count
+        }
+    }
+
+    fn p99(&self) -> u64 {
+        if self.buffer.is_empty() {
+            return 0;
+        }
+        let mut sorted = self.buffer.clone();
+        sorted.sort_unstable();
+        let idx = ((sorted.len() as f64) * 0.99).ceil() as usize;
+        sorted[idx.min(sorted.len() - 1)]
+    }
+
+    fn reset_interval(&mut self) {
+        self.total_sum = 0;
+        self.total_count = 0;
+        // Keep buffer for p99 continuity, just reset sum/count
+    }
+}
+
+impl MetricsCollector {
+    /// Create a new metrics collector.
+    pub fn new() -> Self {
+        Self {
+            inner: Arc::new(MetricsCollectorInner {
+                start_time: Instant::now(),
+                requests_total: AtomicU64::new(0),
+                requests_since_last: AtomicU64::new(0),
+                allow_count: AtomicU64::new(0),
+                deny_count: AtomicU64::new(0),
+                latencies: Mutex::new(LatencyTracker::new(1000)), // Keep last 1000 for p99
+                deny_reasons: Mutex::new(HashMap::new()),
+                actions: Mutex::new(HashMap::new()),
+                principals: Mutex::new(std::collections::HashSet::new()),
+                warrants: Mutex::new(std::collections::HashSet::new()),
+                srl_last_fetch_at: Mutex::new(None),
+                srl_last_fetch_success: AtomicU64::new(0),
+                srl_fetch_failures: AtomicU64::new(0),
+                srl_verification_failures: AtomicU64::new(0),
+                srl_current_version: AtomicU64::new(0),
+            }),
+        }
+    }
+
+    /// Record an authorization decision.
+    pub async fn record_authorization(
+        &self,
+        allowed: bool,
+        tool: &str,
+        latency_us: u64,
+        warrant_id: &str,
+        principal: Option<&str>,
+        deny_reason: Option<&str>,
+    ) {
+        self.inner.requests_total.fetch_add(1, Ordering::Relaxed);
+        self.inner
+            .requests_since_last
+            .fetch_add(1, Ordering::Relaxed);
+
+        if allowed {
+            self.inner.allow_count.fetch_add(1, Ordering::Relaxed);
+        } else {
+            self.inner.deny_count.fetch_add(1, Ordering::Relaxed);
+            if let Some(reason) = deny_reason {
+                let mut reasons = self.inner.deny_reasons.lock().await;
+                *reasons.entry(reason.to_string()).or_insert(0) += 1;
+            }
+        }
+
+        // Record latency
+        {
+            let mut latencies = self.inner.latencies.lock().await;
+            latencies.record(latency_us);
+        }
+
+        // Track unique warrants and principals
+        {
+            let mut warrants = self.inner.warrants.lock().await;
+            warrants.insert(warrant_id.to_string());
+        }
+        if let Some(p) = principal {
+            let mut principals = self.inner.principals.lock().await;
+            principals.insert(p.to_string());
+        }
+
+        // Track tool usage
+        {
+            let mut actions = self.inner.actions.lock().await;
+            *actions.entry(tool.to_string()).or_insert(0) += 1;
+        }
+    }
+
+    /// Record SRL fetch result.
+    pub async fn record_srl_fetch(&self, success: bool, version: Option<u64>) {
+        if success {
+            self.inner
+                .srl_last_fetch_success
+                .store(1, Ordering::Relaxed);
+            if let Some(v) = version {
+                self.inner.srl_current_version.store(v, Ordering::Relaxed);
+            }
+            let mut last_fetch = self.inner.srl_last_fetch_at.lock().await;
+            *last_fetch = Some(chrono::Utc::now().to_rfc3339());
+        } else {
+            self.inner
+                .srl_last_fetch_success
+                .store(0, Ordering::Relaxed);
+            self.inner
+                .srl_fetch_failures
+                .fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    /// Record SRL verification failure.
+    pub fn record_srl_verification_failure(&self) {
+        self.inner
+            .srl_verification_failures
+            .fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Collect runtime metrics for heartbeat.
+    pub async fn collect_runtime_metrics(&self) -> RuntimeMetrics {
+        let latencies = self.inner.latencies.lock().await;
+        RuntimeMetrics {
+            uptime_seconds: self.inner.start_time.elapsed().as_secs(),
+            requests_total: self.inner.requests_total.load(Ordering::Relaxed),
+            requests_since_last: self.inner.requests_since_last.load(Ordering::Relaxed),
+            avg_latency_us: latencies.avg(),
+            p99_latency_us: latencies.p99(),
+            memory_bytes: get_memory_usage(),
+        }
+    }
+
+    /// Collect heartbeat stats and reset interval counters.
+    pub async fn collect_and_reset_stats(&self) -> HeartbeatStats {
+        // Collect deny reasons (top 10)
+        let top_deny_reasons = {
+            let mut reasons = self.inner.deny_reasons.lock().await;
+            let mut sorted: Vec<_> = reasons.drain().collect();
+            sorted.sort_by(|a, b| b.1.cmp(&a.1));
+            sorted.truncate(10);
+            sorted
+        };
+
+        // Collect top actions (top 10)
+        let top_actions = {
+            let mut actions = self.inner.actions.lock().await;
+            let mut sorted: Vec<_> = actions.drain().collect();
+            sorted.sort_by(|a, b| b.1.cmp(&a.1));
+            sorted.truncate(10);
+            sorted
+        };
+
+        // Collect unique counts and reset
+        let unique_principals = {
+            let mut principals = self.inner.principals.lock().await;
+            let count = principals.len() as u64;
+            principals.clear();
+            count
+        };
+
+        let unique_warrants = {
+            let mut warrants = self.inner.warrants.lock().await;
+            let count = warrants.len() as u64;
+            warrants.clear();
+            count
+        };
+
+        // Get counts and reset interval counters
+        let allow_count = self.inner.allow_count.swap(0, Ordering::Relaxed);
+        let deny_count = self.inner.deny_count.swap(0, Ordering::Relaxed);
+        self.inner.requests_since_last.store(0, Ordering::Relaxed);
+
+        // Reset latency interval stats
+        {
+            let mut latencies = self.inner.latencies.lock().await;
+            latencies.reset_interval();
+        }
+
+        HeartbeatStats {
+            allow_count,
+            deny_count,
+            top_deny_reasons,
+            top_actions,
+            unique_principals,
+            unique_warrants,
+        }
+    }
+
+    /// Collect SRL health status.
+    pub async fn collect_srl_health(&self) -> SrlHealth {
+        let last_fetch_at = self.inner.srl_last_fetch_at.lock().await.clone();
+        SrlHealth {
+            last_fetch_at,
+            last_fetch_success: self.inner.srl_last_fetch_success.load(Ordering::Relaxed) == 1,
+            fetch_failures_total: self.inner.srl_fetch_failures.load(Ordering::Relaxed),
+            verification_failures_total: self
+                .inner
+                .srl_verification_failures
+                .load(Ordering::Relaxed),
+            current_srl_version: self.inner.srl_current_version.load(Ordering::Relaxed),
+        }
+    }
+}
+
+impl Default for MetricsCollector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Get current process memory usage (platform-dependent).
+fn get_memory_usage() -> Option<u64> {
+    #[cfg(target_os = "linux")]
+    {
+        // Read from /proc/self/statm
+        if let Ok(statm) = std::fs::read_to_string("/proc/self/statm") {
+            if let Some(rss_pages) = statm.split_whitespace().nth(1) {
+                if let Ok(pages) = rss_pages.parse::<u64>() {
+                    // Page size is typically 4096
+                    return Some(pages * 4096);
+                }
+            }
+        }
+        None
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        // On macOS, we'd need mach APIs which are complex
+        // Return None for now; could add via libc later
+        None
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    {
+        None
+    }
+}
+
+// ============================================================================
 // Heartbeat Configuration
 // ============================================================================
 
@@ -168,6 +600,10 @@ pub struct HeartbeatConfig {
     pub audit_batch_size: usize,
     /// Flush interval for audit events in seconds (default: 10)
     pub audit_flush_interval_secs: u64,
+    /// Environment information for registration
+    pub environment: EnvironmentInfo,
+    /// Shared metrics collector (optional, for metrics reporting)
+    pub metrics: Option<MetricsCollector>,
 }
 
 impl Default for HeartbeatConfig {
@@ -183,6 +619,8 @@ impl Default for HeartbeatConfig {
             trusted_root: None,
             audit_batch_size: 100,
             audit_flush_interval_secs: 10,
+            environment: EnvironmentInfo::default(),
+            metrics: None,
         }
     }
 }
@@ -194,12 +632,29 @@ struct RegisterRequest<'a> {
     #[serde(rename = "type")]
     authorizer_type: &'a str,
     version: &'a str,
+    /// Environment information
+    #[serde(skip_serializing_if = "Option::is_none")]
+    environment: Option<&'a EnvironmentInfo>,
 }
 
 /// Response from authorizer registration.
 #[derive(Deserialize)]
 struct RegisterResponse {
     id: String,
+}
+
+/// Request body for heartbeat with metrics.
+#[derive(Serialize)]
+struct HeartbeatRequest {
+    /// Runtime metrics
+    #[serde(skip_serializing_if = "Option::is_none")]
+    metrics: Option<RuntimeMetrics>,
+    /// Aggregate stats since last heartbeat
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stats: Option<HeartbeatStats>,
+    /// SRL synchronization health
+    #[serde(skip_serializing_if = "Option::is_none")]
+    srl_health: Option<SrlHealth>,
 }
 
 /// Response from heartbeat endpoint.
@@ -310,9 +765,17 @@ pub async fn start_heartbeat_loop_with_audit_and_id(
             Ok(version) => {
                 local_srl_version = version;
                 info!(srl_version = version, "Initial SRL fetched");
+                // Record successful fetch
+                if let Some(ref metrics) = config.metrics {
+                    metrics.record_srl_fetch(true, Some(version)).await;
+                }
             }
             Err(e) => {
                 warn!(error = %e, "Failed to fetch initial SRL, will retry on heartbeat");
+                // Record failed fetch
+                if let Some(ref metrics) = config.metrics {
+                    metrics.record_srl_fetch(false, None).await;
+                }
             }
         }
     }
@@ -364,12 +827,20 @@ pub async fn start_heartbeat_loop_with_audit_and_id(
                                         refresh_required = response.refresh_required,
                                         "SRL updated from Tenuo Cloud"
                                     );
+                                    // Record successful fetch
+                                    if let Some(ref metrics) = config.metrics {
+                                        metrics.record_srl_fetch(true, Some(new_version)).await;
+                                    }
                                 }
                                 Err(e) => {
                                     warn!(
                                         error = %e,
                                         "Failed to fetch SRL from Tenuo Cloud"
                                     );
+                                    // Record failed fetch
+                                    if let Some(ref metrics) = config.metrics {
+                                        metrics.record_srl_fetch(false, None).await;
+                                    }
                                 }
                             }
                         } else {
@@ -544,10 +1015,22 @@ async fn register_with_retry(client: &Client, config: &HeartbeatConfig) -> Optio
 async fn register(client: &Client, config: &HeartbeatConfig) -> Result<String, HeartbeatError> {
     let url = format!("{}/v1/authorizers/register", config.control_plane_url);
 
+    // Include environment info if any fields are set
+    let env_info = if config.environment.k8s_namespace.is_some()
+        || config.environment.k8s_pod_name.is_some()
+        || config.environment.cloud_provider.is_some()
+        || config.environment.environment.is_some()
+    {
+        Some(&config.environment)
+    } else {
+        None
+    };
+
     let request_body = RegisterRequest {
         name: &config.authorizer_name,
         authorizer_type: &config.authorizer_type,
         version: &config.version,
+        environment: env_info,
     };
 
     let response = client
@@ -579,7 +1062,7 @@ async fn register(client: &Client, config: &HeartbeatConfig) -> Result<String, H
     Ok(register_response.id)
 }
 
-/// Send a heartbeat to the control plane.
+/// Send a heartbeat to the control plane with metrics.
 async fn send_heartbeat(
     client: &Client,
     config: &HeartbeatConfig,
@@ -590,9 +1073,27 @@ async fn send_heartbeat(
         config.control_plane_url, authorizer_id
     );
 
+    // Collect metrics if collector is available
+    let (metrics, stats, srl_health) = if let Some(ref collector) = config.metrics {
+        let metrics = collector.collect_runtime_metrics().await;
+        let stats = collector.collect_and_reset_stats().await;
+        let srl_health = collector.collect_srl_health().await;
+        (Some(metrics), Some(stats), Some(srl_health))
+    } else {
+        (None, None, None)
+    };
+
+    let request_body = HeartbeatRequest {
+        metrics,
+        stats,
+        srl_health,
+    };
+
     let response = client
         .post(&url)
         .header("Authorization", format!("Bearer {}", config.api_key))
+        .header("Content-Type", "application/json")
+        .json(&request_body)
         .send()
         .await
         .map_err(|e| HeartbeatError::Network(e.to_string()))?;
@@ -710,7 +1211,85 @@ mod tests {
             trusted_root: None,
             audit_batch_size: 100,
             audit_flush_interval_secs: 10,
+            environment: EnvironmentInfo::default(),
+            metrics: None,
         }
+    }
+
+    #[test]
+    fn test_environment_info_default() {
+        let env = EnvironmentInfo::default();
+        assert!(env.k8s_namespace.is_none());
+        assert!(env.cloud_provider.is_none());
+        assert!(env.environment.is_none());
+    }
+
+    #[test]
+    fn test_runtime_metrics_default() {
+        let metrics = RuntimeMetrics::default();
+        assert_eq!(metrics.uptime_seconds, 0);
+        assert_eq!(metrics.requests_total, 0);
+    }
+
+    #[test]
+    fn test_heartbeat_stats_default() {
+        let stats = HeartbeatStats::default();
+        assert_eq!(stats.allow_count, 0);
+        assert_eq!(stats.deny_count, 0);
+        assert!(stats.top_deny_reasons.is_empty());
+    }
+
+    #[test]
+    fn test_srl_health_default() {
+        let health = SrlHealth::default();
+        assert!(health.last_fetch_at.is_none());
+        assert!(!health.last_fetch_success);
+        assert_eq!(health.current_srl_version, 0);
+    }
+
+    #[tokio::test]
+    async fn test_metrics_collector_record_authorization() {
+        let collector = MetricsCollector::new();
+
+        // Record an allowed request
+        collector
+            .record_authorization(true, "read_file", 100, "wid-1", Some("user-1"), None)
+            .await;
+
+        // Record a denied request
+        collector
+            .record_authorization(
+                false,
+                "write_file",
+                200,
+                "wid-2",
+                Some("user-1"),
+                Some("constraint_violation"),
+            )
+            .await;
+
+        let stats = collector.collect_and_reset_stats().await;
+        assert_eq!(stats.allow_count, 1);
+        assert_eq!(stats.deny_count, 1);
+        assert_eq!(stats.unique_principals, 1);
+        assert_eq!(stats.unique_warrants, 2);
+    }
+
+    #[tokio::test]
+    async fn test_metrics_collector_latency() {
+        let collector = MetricsCollector::new();
+
+        // Record some latencies
+        for i in 1..=100 {
+            collector
+                .record_authorization(true, "test", i * 10, &format!("wid-{}", i), None, None)
+                .await;
+        }
+
+        let metrics = collector.collect_runtime_metrics().await;
+        assert_eq!(metrics.requests_total, 100);
+        assert!(metrics.avg_latency_us > 0);
+        assert!(metrics.p99_latency_us >= metrics.avg_latency_us);
     }
 
     #[test]

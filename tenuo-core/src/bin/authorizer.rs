@@ -62,7 +62,8 @@ use tenuo::{
     extraction::RequestContext,
     gateway_config::{CompiledGatewayConfig, GatewayConfig},
     heartbeat::{
-        self, create_audit_channel, AuditEventSender, AuthorizationEvent, HeartbeatConfig,
+        self, create_audit_channel, AuditEventSender, AuthorizationEvent, EnvironmentInfo,
+        HeartbeatConfig, MetricsCollector,
     },
     planes::Authorizer,
     revocation::SignedRevocationList,
@@ -397,6 +398,8 @@ struct AppState {
     audit_tx: Option<AuditEventSender>,
     /// Authorizer ID from control plane registration (for audit events)
     authorizer_id: Arc<tokio::sync::RwLock<Option<String>>>,
+    /// Metrics collector (None if control plane not configured)
+    metrics: Option<MetricsCollector>,
 }
 
 /// Structured denial reason for logging
@@ -518,12 +521,18 @@ async fn serve_http(
         PublicKey::from_bytes(&arr).ok()
     });
 
-    // Create audit channel and spawn heartbeat task if control plane is configured
-    let audit_tx = if let (Some(url), Some(key), Some(name)) =
+    // Create audit channel, metrics collector, and spawn heartbeat task if control plane is configured
+    let (audit_tx, metrics) = if let (Some(url), Some(key), Some(name)) =
         (&cli.control_plane_url, &cli.api_key, &cli.authorizer_name)
     {
         // Create audit event channel (buffer 1000 events)
         let (tx, rx) = create_audit_channel(1000);
+
+        // Create metrics collector for runtime stats
+        let metrics = MetricsCollector::new();
+
+        // Get environment info from standard env vars
+        let environment = EnvironmentInfo::from_env();
 
         let heartbeat_config = HeartbeatConfig {
             control_plane_url: url.clone(),
@@ -536,6 +545,8 @@ async fn serve_http(
             trusted_root: trusted_root.clone(),
             audit_batch_size: cli.audit_batch_size,
             audit_flush_interval_secs: cli.audit_flush_interval,
+            environment,
+            metrics: Some(metrics.clone()),
         };
 
         // Clone shared_authorizer_id for the heartbeat task to update
@@ -548,11 +559,11 @@ async fn serve_http(
             )
             .await;
         });
-        info!("Heartbeat and audit streaming enabled for Tenuo Cloud");
+        info!("Heartbeat, metrics, and audit streaming enabled for Tenuo Cloud");
 
-        Some(tx)
+        (Some(tx), Some(metrics))
     } else {
-        None
+        (None, None)
     };
 
     let state = Arc::new(AppState {
@@ -561,6 +572,7 @@ async fn serve_http(
         debug_mode,
         audit_tx,
         authorizer_id: shared_authorizer_id,
+        metrics,
     });
 
     // Build the router
@@ -838,6 +850,20 @@ async fn handle_request(
             )
             .await;
 
+            // Record metrics (if control plane connected)
+            if let Some(ref metrics) = state.metrics {
+                metrics
+                    .record_authorization(
+                        true,
+                        &extraction_result.tool,
+                        latency_us,
+                        &warrant_id,
+                        root_principal.as_deref(),
+                        None,
+                    )
+                    .await;
+            }
+
             (
                 StatusCode::OK,
                 Json(json!({
@@ -919,13 +945,27 @@ async fn handle_request(
                     deny_reason.reason.clone(),
                     deny_reason.constraint.clone(),
                     chain_depth,
-                    root_principal,
+                    root_principal.clone(),
                     warrant_stack_b64,
                     latency_us,
                     request_id.clone(),
                 ),
             )
             .await;
+
+            // Record metrics (if control plane connected)
+            if let Some(ref metrics) = state.metrics {
+                metrics
+                    .record_authorization(
+                        false,
+                        &extraction_result.tool,
+                        latency_us,
+                        &warrant_id,
+                        root_principal.as_deref(),
+                        Some(&deny_reason.reason),
+                    )
+                    .await;
+            }
 
             response
         }
