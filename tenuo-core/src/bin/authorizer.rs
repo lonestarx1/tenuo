@@ -61,7 +61,9 @@ use tenuo::{
     constraints::ConstraintValue,
     extraction::RequestContext,
     gateway_config::{CompiledGatewayConfig, GatewayConfig},
-    heartbeat::{self, HeartbeatConfig},
+    heartbeat::{
+        self, create_audit_channel, AuditEventSender, AuthorizationEvent, HeartbeatConfig,
+    },
     planes::Authorizer,
     revocation::SignedRevocationList,
     wire, PublicKey,
@@ -111,6 +113,14 @@ struct Cli {
     /// Heartbeat interval in seconds
     #[arg(long, env = "TENUO_HEARTBEAT_INTERVAL", default_value = "30")]
     heartbeat_interval: u64,
+
+    /// Audit event batch size (flush when buffer reaches this size)
+    #[arg(long, env = "TENUO_AUDIT_BATCH_SIZE", default_value = "100")]
+    audit_batch_size: usize,
+
+    /// Audit event flush interval in seconds
+    #[arg(long, env = "TENUO_AUDIT_FLUSH_INTERVAL", default_value = "10")]
+    audit_flush_interval: u64,
 
     #[command(subcommand)]
     command: Commands,
@@ -383,6 +393,10 @@ struct AppState {
     authorizer: Arc<tokio::sync::RwLock<Authorizer>>,
     config: CompiledGatewayConfig,
     debug_mode: bool,
+    /// Audit event sender (None if control plane not configured)
+    audit_tx: Option<AuditEventSender>,
+    /// Authorizer ID from control plane registration (for audit events)
+    authorizer_id: Arc<tokio::sync::RwLock<Option<String>>>,
 }
 
 /// Structured denial reason for logging
@@ -492,6 +506,10 @@ async fn serve_http(
     // Wrap authorizer in RwLock for shared access (allows heartbeat to update SRL)
     let shared_authorizer = Arc::new(tokio::sync::RwLock::new(authorizer));
 
+    // Shared authorizer_id (populated after control plane registration)
+    let shared_authorizer_id: Arc<tokio::sync::RwLock<Option<String>>> =
+        Arc::new(tokio::sync::RwLock::new(None));
+
     // Parse trusted root key for SRL verification (first key is control plane key)
     let trusted_root = cli.trusted_keys.as_ref().and_then(|keys| {
         let first = keys.split(',').next()?;
@@ -500,10 +518,13 @@ async fn serve_http(
         PublicKey::from_bytes(&arr).ok()
     });
 
-    // Spawn heartbeat task if control plane is configured
-    if let (Some(url), Some(key), Some(name)) =
+    // Create audit channel and spawn heartbeat task if control plane is configured
+    let audit_tx = if let (Some(url), Some(key), Some(name)) =
         (&cli.control_plane_url, &cli.api_key, &cli.authorizer_name)
     {
+        // Create audit event channel (buffer 1000 events)
+        let (tx, rx) = create_audit_channel(1000);
+
         let heartbeat_config = HeartbeatConfig {
             control_plane_url: url.clone(),
             api_key: key.clone(),
@@ -513,16 +534,33 @@ async fn serve_http(
             interval_secs: cli.heartbeat_interval,
             authorizer: Some(shared_authorizer.clone()),
             trusted_root: trusted_root.clone(),
+            audit_batch_size: cli.audit_batch_size,
+            audit_flush_interval_secs: cli.audit_flush_interval,
         };
 
-        tokio::spawn(heartbeat::start_heartbeat_loop(heartbeat_config));
-        info!("Heartbeat task started for Tenuo Cloud");
-    }
+        // Clone shared_authorizer_id for the heartbeat task to update
+        let authorizer_id_writer = shared_authorizer_id.clone();
+        tokio::spawn(async move {
+            heartbeat::start_heartbeat_loop_with_audit_and_id(
+                heartbeat_config,
+                Some(rx),
+                authorizer_id_writer,
+            )
+            .await;
+        });
+        info!("Heartbeat and audit streaming enabled for Tenuo Cloud");
+
+        Some(tx)
+    } else {
+        None
+    };
 
     let state = Arc::new(AppState {
         authorizer: shared_authorizer,
         config: compiled,
         debug_mode,
+        audit_tx,
+        authorizer_id: shared_authorizer_id,
     });
 
     // Build the router
@@ -738,6 +776,9 @@ async fn handle_request(
         });
 
     // 8. Authorize
+    // Start timing for audit event
+    let auth_start = std::time::Instant::now();
+
     // Acquire read lock on authorizer (allows concurrent reads, blocks only during SRL updates)
     let authorizer = state.authorizer.read().await;
 
@@ -761,6 +802,16 @@ async fn handle_request(
     // Release the lock before building the response
     drop(authorizer);
 
+    // Calculate authorization latency
+    let latency_us = auth_start.elapsed().as_micros() as u64;
+
+    // Extract chain metadata for audit event
+    let chain_depth = leaf_warrant.depth() as u8;
+    let root_principal = chain.first().map(|w| hex::encode(w.issuer().to_bytes()));
+
+    // Encode warrant stack for audit event (base64 CBOR)
+    let warrant_stack_b64 = encode_warrant_stack_for_audit(&chain);
+
     match result {
         Ok(()) => {
             info!(
@@ -770,6 +821,23 @@ async fn handle_request(
                 event = "authorization_success",
                 "Request authorized"
             );
+
+            // Emit audit event (if control plane connected)
+            emit_audit_event(
+                &state,
+                AuthorizationEvent::allow(
+                    String::new(), // Filled by emit_audit_event
+                    warrant_id.clone(),
+                    extraction_result.tool.clone(),
+                    chain_depth,
+                    root_principal.clone(),
+                    warrant_stack_b64.clone(),
+                    latency_us,
+                    request_id.clone(),
+                ),
+            )
+            .await;
+
             (
                 StatusCode::OK,
                 Json(json!({
@@ -841,8 +909,62 @@ async fn handle_request(
                 }
             }
 
+            // Emit audit event (if control plane connected)
+            emit_audit_event(
+                &state,
+                AuthorizationEvent::deny(
+                    String::new(), // Filled by emit_audit_event
+                    warrant_id.clone(),
+                    extraction_result.tool.clone(),
+                    deny_reason.reason.clone(),
+                    deny_reason.constraint.clone(),
+                    chain_depth,
+                    root_principal,
+                    warrant_stack_b64,
+                    latency_us,
+                    request_id.clone(),
+                ),
+            )
+            .await;
+
             response
         }
+    }
+}
+
+/// Encode a warrant chain as base64 CBOR for audit events.
+fn encode_warrant_stack_for_audit(chain: &[tenuo::Warrant]) -> Option<String> {
+    if chain.is_empty() {
+        return None;
+    }
+
+    // Convert slice to WarrantStack and encode
+    let stack = wire::WarrantStack(chain.to_vec());
+    match wire::encode_stack(&stack) {
+        Ok(bytes) => Some(base64::engine::general_purpose::STANDARD.encode(&bytes)),
+        Err(e) => {
+            warn!(error = %e, "Failed to encode warrant stack for audit");
+            None
+        }
+    }
+}
+
+/// Emit an audit event to the control plane (if configured).
+/// Fills in the authorizer_id from shared state.
+async fn emit_audit_event(state: &AppState, mut event: AuthorizationEvent) {
+    if let Some(ref tx) = state.audit_tx {
+        // Get authorizer_id from shared state
+        let authorizer_id = state.authorizer_id.read().await;
+        if let Some(ref id) = *authorizer_id {
+            event.authorizer_id = id.clone();
+
+            // Send event (non-blocking, drop if channel is full)
+            if let Err(e) = tx.try_send(event) {
+                debug!(error = %e, "Failed to send audit event (channel full or closed)");
+            }
+        }
+        // If authorizer_id is not set yet, skip the event
+        // (this happens during the brief window between server start and registration)
     }
 }
 

@@ -229,10 +229,9 @@ class TenuoAgentDojoHarness:
             ]
         )
 
-        # Set pipeline name for logging (required by AgentDojo)
-        base_pipeline.name = "tenuo-pipeline"
-
         if with_tenuo:
+            # Set pipeline name for Tenuo runs (distinct from baseline)
+            base_pipeline.name = "tenuo-pipeline"
             # Wrap with Tenuo protection
             return TenuoProtectedPipeline(
                 base_pipeline=base_pipeline,
@@ -242,6 +241,8 @@ class TenuoAgentDojoHarness:
                 metrics=self.metrics,
             )
         else:
+            # Set distinct pipeline name for baseline (no Tenuo)
+            base_pipeline.name = "baseline-pipeline"
             return base_pipeline
 
     def run_benchmark(

@@ -1,7 +1,7 @@
 //! Heartbeat module for Tenuo Cloud control plane integration.
 //!
-//! This module provides automatic registration, heartbeat, and SRL synchronization
-//! for authorizers connecting to Tenuo Cloud (enterprise feature).
+//! This module provides automatic registration, heartbeat, SRL synchronization,
+//! and audit event streaming for authorizers connecting to Tenuo Cloud (enterprise feature).
 //!
 //! # Usage
 //!
@@ -18,6 +18,7 @@
 //! 4. If heartbeats fail, logs warnings and continues retrying
 //! 5. On each heartbeat, checks if SRL update is needed (version or urgent flag)
 //! 6. Fetches and applies new SRL when needed
+//! 7. Flushes buffered audit events to the control plane
 
 use crate::planes::Authorizer;
 use crate::revocation::SignedRevocationList;
@@ -26,9 +27,123 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::RwLock;
+use tokio::sync::{mpsc, RwLock};
 use tokio::time::interval;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
+
+// ============================================================================
+// Audit Event Streaming
+// ============================================================================
+
+/// An authorization event to be sent to the control plane for dashboard/analytics.
+#[derive(Clone, Debug, Serialize)]
+pub struct AuthorizationEvent {
+    /// ISO 8601 timestamp
+    pub timestamp: String,
+    /// Authorizer instance ID (assigned by control plane on registration)
+    pub authorizer_id: String,
+    /// Warrant ID being authorized (leaf warrant)
+    pub warrant_id: String,
+    /// Decision: "allow" or "deny"
+    pub decision: &'static str,
+    /// Reason for denial (if denied)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deny_reason: Option<String>,
+    /// Tool being authorized
+    pub tool: String,
+    /// Specific constraint that failed (if denied)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failed_constraint: Option<String>,
+    /// Delegation chain depth
+    pub chain_depth: u8,
+    /// Root principal (issuer of root warrant in chain)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub root_principal: Option<String>,
+    /// Full warrant chain (base64-encoded CBOR WarrantStack)
+    /// Contains all warrants from root to leaf for chain reconstruction
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub warrant_stack: Option<String>,
+    /// Authorization latency in microseconds
+    pub latency_us: u64,
+    /// Unique request ID for tracing
+    pub request_id: String,
+}
+
+impl AuthorizationEvent {
+    /// Create a new "allow" event
+    #[allow(clippy::too_many_arguments)]
+    pub fn allow(
+        authorizer_id: String,
+        warrant_id: String,
+        tool: String,
+        chain_depth: u8,
+        root_principal: Option<String>,
+        warrant_stack: Option<String>,
+        latency_us: u64,
+        request_id: String,
+    ) -> Self {
+        Self {
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            authorizer_id,
+            warrant_id,
+            decision: "allow",
+            deny_reason: None,
+            tool,
+            failed_constraint: None,
+            chain_depth,
+            root_principal,
+            warrant_stack,
+            latency_us,
+            request_id,
+        }
+    }
+
+    /// Create a new "deny" event
+    #[allow(clippy::too_many_arguments)]
+    pub fn deny(
+        authorizer_id: String,
+        warrant_id: String,
+        tool: String,
+        deny_reason: String,
+        failed_constraint: Option<String>,
+        chain_depth: u8,
+        root_principal: Option<String>,
+        warrant_stack: Option<String>,
+        latency_us: u64,
+        request_id: String,
+    ) -> Self {
+        Self {
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            authorizer_id,
+            warrant_id,
+            decision: "deny",
+            deny_reason: Some(deny_reason),
+            tool,
+            failed_constraint,
+            chain_depth,
+            root_principal,
+            warrant_stack,
+            latency_us,
+            request_id,
+        }
+    }
+}
+
+/// Channel-based sender for audit events.
+/// Clone this and pass to request handlers.
+pub type AuditEventSender = mpsc::Sender<AuthorizationEvent>;
+
+/// Create an audit event channel with the specified buffer size.
+/// Returns (sender, receiver). The sender can be cloned for multiple handlers.
+pub fn create_audit_channel(
+    buffer_size: usize,
+) -> (AuditEventSender, mpsc::Receiver<AuthorizationEvent>) {
+    mpsc::channel(buffer_size)
+}
+
+// ============================================================================
+// Heartbeat Configuration
+// ============================================================================
 
 /// Configuration for the heartbeat client.
 #[derive(Clone)]
@@ -49,6 +164,27 @@ pub struct HeartbeatConfig {
     pub authorizer: Option<Arc<RwLock<Authorizer>>>,
     /// Trusted root public key for SRL verification
     pub trusted_root: Option<PublicKey>,
+    /// Maximum events to batch before flushing (default: 100)
+    pub audit_batch_size: usize,
+    /// Flush interval for audit events in seconds (default: 10)
+    pub audit_flush_interval_secs: u64,
+}
+
+impl Default for HeartbeatConfig {
+    fn default() -> Self {
+        Self {
+            control_plane_url: String::new(),
+            api_key: String::new(),
+            authorizer_name: String::new(),
+            authorizer_type: "sidecar".to_string(),
+            version: String::new(),
+            interval_secs: 30,
+            authorizer: None,
+            trusted_root: None,
+            audit_batch_size: 100,
+            audit_flush_interval_secs: 10,
+        }
+    }
 }
 
 /// Request body for authorizer registration.
@@ -89,7 +225,7 @@ struct SrlResponse {
     version: u64,
 }
 
-/// Start the heartbeat loop in the background.
+/// Start the heartbeat loop in the background (legacy signature for backwards compatibility).
 ///
 /// This function will:
 /// 1. Attempt to register with the control plane (with retries)
@@ -101,6 +237,39 @@ struct SrlResponse {
 /// This function is designed to be spawned as a tokio task and will run
 /// indefinitely until the process exits.
 pub async fn start_heartbeat_loop(config: HeartbeatConfig) {
+    start_heartbeat_loop_with_audit(config, None).await;
+}
+
+/// Start the heartbeat and audit event loops in the background.
+///
+/// This function will:
+/// 1. Attempt to register with the control plane (with retries)
+/// 2. If successful, fetch initial SRL and spawn audit event flush task
+/// 3. Start sending periodic heartbeats
+/// 4. If registration fails, log a warning and return (authorizer runs standalone)
+/// 5. On each heartbeat, check if SRL needs updating and fetch if needed
+///
+/// If `audit_rx` is provided, audit events will be batched and sent to the control plane.
+///
+/// This function is designed to be spawned as a tokio task and will run
+/// indefinitely until the process exits.
+pub async fn start_heartbeat_loop_with_audit(
+    config: HeartbeatConfig,
+    audit_rx: Option<mpsc::Receiver<AuthorizationEvent>>,
+) {
+    start_heartbeat_loop_with_audit_and_id(config, audit_rx, Arc::new(RwLock::new(None))).await;
+}
+
+/// Start the heartbeat and audit event loops in the background, with shared authorizer_id.
+///
+/// Same as `start_heartbeat_loop_with_audit`, but writes the authorizer_id to the provided
+/// shared state after registration. This allows request handlers to include the authorizer_id
+/// in audit events.
+pub async fn start_heartbeat_loop_with_audit_and_id(
+    config: HeartbeatConfig,
+    audit_rx: Option<mpsc::Receiver<AuthorizationEvent>>,
+    shared_authorizer_id: Arc<RwLock<Option<String>>>,
+) {
     let client = Client::builder()
         .timeout(Duration::from_secs(10))
         .build()
@@ -124,6 +293,12 @@ pub async fn start_heartbeat_loop(config: HeartbeatConfig) {
         "Registered with Tenuo Cloud"
     );
 
+    // Store authorizer_id in shared state for request handlers
+    {
+        let mut id_guard = shared_authorizer_id.write().await;
+        *id_guard = Some(authorizer_id.clone());
+    }
+
     // Track local SRL version (0 = no SRL loaded)
     let mut local_srl_version: u64 = 0;
 
@@ -142,6 +317,17 @@ pub async fn start_heartbeat_loop(config: HeartbeatConfig) {
         }
     }
 
+    // Spawn audit event flush task if receiver provided
+    if let Some(rx) = audit_rx {
+        let audit_client = client.clone();
+        let audit_config = config.clone();
+        let audit_authorizer_id = authorizer_id.clone();
+        tokio::spawn(async move {
+            run_audit_flush_loop(audit_client, audit_config, audit_authorizer_id, rx).await;
+        });
+        info!("Audit event streaming enabled");
+    }
+
     // Heartbeat loop
     let mut ticker = interval(Duration::from_secs(config.interval_secs));
 
@@ -153,7 +339,7 @@ pub async fn start_heartbeat_loop(config: HeartbeatConfig) {
 
         match send_heartbeat(&client, &config, &authorizer_id).await {
             Ok(response) => {
-                tracing::debug!(
+                debug!(
                     authorizer_id = %authorizer_id,
                     "Heartbeat sent successfully"
                 );
@@ -198,6 +384,113 @@ pub async fn start_heartbeat_loop(config: HeartbeatConfig) {
                     error = %e,
                     "Heartbeat failed, will retry on next interval"
                 );
+            }
+        }
+    }
+}
+
+/// Run the audit event flush loop.
+/// Collects events from the channel and flushes them in batches.
+async fn run_audit_flush_loop(
+    client: Client,
+    config: HeartbeatConfig,
+    authorizer_id: String,
+    mut rx: mpsc::Receiver<AuthorizationEvent>,
+) {
+    let mut buffer: Vec<AuthorizationEvent> = Vec::with_capacity(config.audit_batch_size);
+    let mut flush_ticker = interval(Duration::from_secs(config.audit_flush_interval_secs));
+
+    // Skip the first immediate tick
+    flush_ticker.tick().await;
+
+    loop {
+        tokio::select! {
+            // Receive events from channel
+            Some(event) = rx.recv() => {
+                buffer.push(event);
+
+                // Flush if batch is full
+                if buffer.len() >= config.audit_batch_size {
+                    flush_audit_events(&client, &config, &authorizer_id, &mut buffer).await;
+                }
+            }
+            // Periodic flush
+            _ = flush_ticker.tick() => {
+                if !buffer.is_empty() {
+                    flush_audit_events(&client, &config, &authorizer_id, &mut buffer).await;
+                }
+            }
+        }
+    }
+}
+
+/// Flush buffered audit events to the control plane.
+async fn flush_audit_events(
+    client: &Client,
+    config: &HeartbeatConfig,
+    authorizer_id: &str,
+    buffer: &mut Vec<AuthorizationEvent>,
+) {
+    if buffer.is_empty() {
+        return;
+    }
+
+    let event_count = buffer.len();
+    let url = format!(
+        "{}/v1/authorizers/{}/events",
+        config.control_plane_url, authorizer_id
+    );
+
+    let result = client
+        .post(&url)
+        .header("Authorization", format!("Bearer {}", config.api_key))
+        .header("Content-Type", "application/json")
+        .json(&buffer)
+        .send()
+        .await;
+
+    match result {
+        Ok(response) if response.status().is_success() => {
+            debug!(
+                authorizer_id = %authorizer_id,
+                event_count = %event_count,
+                "Flushed audit events to control plane"
+            );
+            buffer.clear();
+        }
+        Ok(response) => {
+            let status = response.status();
+            warn!(
+                authorizer_id = %authorizer_id,
+                event_count = %event_count,
+                status = %status,
+                "Failed to flush audit events, will retry"
+            );
+            // Keep events in buffer for retry, but cap size to prevent unbounded growth
+            if buffer.len() > config.audit_batch_size * 10 {
+                let drain_count = buffer.len() - config.audit_batch_size;
+                warn!(
+                    dropped_events = %drain_count,
+                    "Dropping oldest audit events due to buffer overflow"
+                );
+                buffer.drain(0..drain_count);
+            }
+        }
+        Err(e) => {
+            warn!(
+                authorizer_id = %authorizer_id,
+                event_count = %event_count,
+                error = %e,
+                "Network error flushing audit events, will retry"
+            );
+            // Same overflow protection
+            if buffer.len() > config.audit_batch_size * 10 {
+                let drain_count = buffer.len() - config.audit_batch_size;
+                warn!(
+                    dropped_events = %drain_count,
+                    "Dropping oldest audit events due to buffer overflow"
+                );
+                buffer.drain(0..drain_count);
             }
         }
     }
@@ -398,7 +691,76 @@ mod tests {
             interval_secs: 30,
             authorizer: None,
             trusted_root: None,
+            audit_batch_size: 100,
+            audit_flush_interval_secs: 10,
         }
+    }
+
+    #[test]
+    fn test_authorization_event_allow() {
+        let event = AuthorizationEvent::allow(
+            "auth-123".to_string(),
+            "wid-456".to_string(),
+            "read_file".to_string(),
+            0,
+            Some("root-pk".to_string()),
+            Some("base64stack".to_string()),
+            1234,
+            "req-789".to_string(),
+        );
+        assert_eq!(event.decision, "allow");
+        assert!(event.deny_reason.is_none());
+        assert_eq!(event.tool, "read_file");
+        assert_eq!(event.chain_depth, 0);
+        assert_eq!(event.warrant_stack, Some("base64stack".to_string()));
+    }
+
+    #[test]
+    fn test_authorization_event_deny() {
+        let event = AuthorizationEvent::deny(
+            "auth-123".to_string(),
+            "wid-456".to_string(),
+            "write_file".to_string(),
+            "constraint_violation".to_string(),
+            Some("path".to_string()),
+            1,
+            Some("root-pk".to_string()),
+            Some("base64stack".to_string()),
+            5678,
+            "req-999".to_string(),
+        );
+        assert_eq!(event.decision, "deny");
+        assert_eq!(event.deny_reason, Some("constraint_violation".to_string()));
+        assert_eq!(event.failed_constraint, Some("path".to_string()));
+        assert_eq!(event.chain_depth, 1);
+        assert_eq!(event.warrant_stack, Some("base64stack".to_string()));
+    }
+
+    #[test]
+    fn test_authorization_event_serialization() {
+        let event = AuthorizationEvent::allow(
+            "auth-123".to_string(),
+            "wid-456".to_string(),
+            "read_file".to_string(),
+            0,
+            None,
+            None, // No warrant stack
+            1234,
+            "req-789".to_string(),
+        );
+        let json = serde_json::to_string(&event).unwrap();
+        assert!(json.contains("\"decision\":\"allow\""));
+        assert!(json.contains("\"tool\":\"read_file\""));
+        // Optional fields should be omitted when None
+        assert!(!json.contains("deny_reason"));
+        assert!(!json.contains("warrant_stack"));
+    }
+
+    #[test]
+    fn test_create_audit_channel() {
+        let (tx, _rx) = create_audit_channel(100);
+        // Should be able to clone the sender
+        let _tx2 = tx.clone();
     }
 
     #[test]
