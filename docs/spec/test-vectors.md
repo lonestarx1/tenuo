@@ -1,13 +1,21 @@
 # Tenuo Protocol Test Vectors
 
 **Version:** 1.0
-**Documentation Revision:** 2 (2026-01-21)
+
+**Documentation Revision:** 3 (2026-02-03)
+
 **Generated:** 2024-01-01 (deterministic timestamps for reproducibility)
+
 **Specification:** [wire-format-v1.md](wire-format-v1.md)
 
 ---
 
 ## Revision History
+
+- **Rev 3** (2026-02-03): Added composite constraint test vectors
+  - Added A.25.6 All (AND), A.25.7 Any (OR), A.25.8 Not constraint test vectors
+  - Updated constraint type table in Implementation Notes
+  - **No protocol changes** - test vectors remain v1.0 compatible
 
 - **Rev 2** (2026-01-21): Documentation cleanup
   - Regenerated all test vectors to match current generator output
@@ -1026,63 +1034,6 @@ security model.
 
 ---
 
-## Implementation Notes
-
-### CBOR Wire Format
-
-Payload fields use integer keys:
-
-| Key | Field |
-|-----|-------|
-| 0 | version |
-| 1 | id |
-| 2 | warrant_type |
-| 3 | tools |
-| 4 | holder |
-| 5 | issuer |
-| 6 | issued_at |
-| 7 | expires_at |
-| 8 | max_depth |
-| 9 | parent_hash (optional) |
-| 10 | extensions (optional) |
-| 11 | issuable_tools (optional) |
-| 12 | (reserved) |
-| 13 | max_issue_depth (optional) |
-| 14 | constraint_bounds (optional) |
-| 15 | required_approvers (optional) |
-| 16 | min_approvals (optional) |
-| 17 | clearance (optional) |
-| 18 | depth |
-
-### Signature Message
-
-The signature is computed over a domain-separated message:
-
-```
-message = b"tenuo-warrant-v1" || envelope_version || payload_cbor_bytes
-signature = Ed25519.sign(issuer_key, message)
-```
-
-Where `envelope_version` is `0x01` for v1 warrants.
-
-### Constraint Type IDs
-
-| Type | ID |
-|------|-----|
-| Exact | 1 |
-| Pattern | 2 |
-| Wildcard | 16 |
-
----
-
-## References
-
-- **[RFC 8032]** Josefsson, S., Liusvaara, I., "Edwards-Curve Digital Signature Algorithm (EdDSA)", January 2017. https://datatracker.ietf.org/doc/html/rfc8032
-- **[RFC 8949]** Bormann, C., Hoffman, P., "Concise Binary Object Representation (CBOR)", December 2020. https://datatracker.ietf.org/doc/html/rfc8949
-- **[protocol-spec-v1.md]** Tenuo Protocol Specification
-
----
-
 ## A.15 Issuer Constraint Violation
 
 **Scenario:** Issuer warrant defines bounds, child exceeds them.
@@ -1612,6 +1563,52 @@ d5b4237ec474608233c4c3bf5680a8111bf8e186cce1b30dc97c6c810627eee92323a8965ab67a9f
 
 ---
 
+## A.22.b SignedRevocationList (SRL)
+
+Complete wire format for revocation list.
+
+### SrlPayload
+
+| Field | Value |
+|-------|-------|
+| `revoked_ids` | `["tnu_wrt_019471f8000070008000000000002201"]` |
+| `version` | 1 |
+| `issued_at` | `1704067200` |
+| `issuer` | `8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c` |
+
+**SrlPayload CBOR (148 bytes):**
+```
+a46b7265766f6b65645f696473817828746e755f7772745f3031393437316638
+3030303037303030383030303030303030303030323230316776657273696f6e
+01696973737565645f61741a65920080666973737565729820188a188818e318
+dd18740918f1189518fd185218db182d183c18ba185d187218ca18670918bf18
+1d189412181b18f3187418880118b40f186f185c
+```
+
+**Signing Preimage:**
+```
+b"tenuo-srl-v1" || payload_bytes
+```
+
+**Control Plane Signature (64 bytes):**
+```
+b82234fcc8c4dfd49f150cb3fc26e7ebe5f49dedbd9d2c09761a761fa74fcf1d8dbf79533b1031bee8c31f1b234fa179372b55a90e4bf359bc64a02477e74f01
+```
+
+**Complete SignedRevocationList (233 bytes):**
+```
+a2677061796c6f6164a46b7265766f6b65645f696473817828746e755f777274
+5f30313934373166383030303037303030383030303030303030303030323230
+316776657273696f6e01696973737565645f61741a6592008066697373756572
+9820188a188818e318dd18740918f1189518fd185218db182d183c18ba185d18
+7218ca18670918bf181d189412181b18f3187418880118b40f186f185c697369
+676e61747572655840b82234fcc8c4dfd49f150cb3fc26e7ebe5f49dedbd9d2c
+09761a761fa74fcf1d8dbf79533b1031bee8c31f1b234fa179372b55a90e4bf3
+59bc64a02477e74f01
+```
+
+---
+
 ## A.23 Session Mismatch
 
 **A.23 Root (session_id=sess-abc)**
@@ -1773,52 +1770,6 @@ a4a5a6a7a8b1b2b3b4b5b6b7b86b65787465726e616c5f6964782d61726e3a61
 7265584043681e09a5ecdd8392eb157f1d8dfe744f37f28030725a1f5c84ad41
 c57574a1d768ba733e8e4052934c96e90b49fb4cfe29d600f4af1afb1b68ea63
 4d6f290a
-```
-
----
-
-## A.22.b SignedRevocationList (SRL)
-
-Complete wire format for revocation list.
-
-### SrlPayload
-
-| Field | Value |
-|-------|-------|
-| `revoked_ids` | `["tnu_wrt_019471f8000070008000000000002201"]` |
-| `version` | 1 |
-| `issued_at` | `1704067200` |
-| `issuer` | `8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c` |
-
-**SrlPayload CBOR (148 bytes):**
-```
-a46b7265766f6b65645f696473817828746e755f7772745f3031393437316638
-3030303037303030383030303030303030303030323230316776657273696f6e
-01696973737565645f61741a65920080666973737565729820188a188818e318
-dd18740918f1189518fd185218db182d183c18ba185d187218ca18670918bf18
-1d189412181b18f3187418880118b40f186f185c
-```
-
-**Signing Preimage:**
-```
-b"tenuo-srl-v1" || payload_bytes
-```
-
-**Control Plane Signature (64 bytes):**
-```
-b82234fcc8c4dfd49f150cb3fc26e7ebe5f49dedbd9d2c09761a761fa74fcf1d8dbf79533b1031bee8c31f1b234fa179372b55a90e4bf359bc64a02477e74f01
-```
-
-**Complete SignedRevocationList (233 bytes):**
-```
-a2677061796c6f6164a46b7265766f6b65645f696473817828746e755f777274
-5f30313934373166383030303037303030383030303030303030303030323230
-316776657273696f6e01696973737565645f61741a6592008066697373756572
-9820188a188818e318dd18740918f1189518fd185218db182d183c18ba185d18
-7218ca18670918bf181d189412181b18f3187418880118b40f186f185c697369
-676e61747572655840b82234fcc8c4dfd49f150cb3fc26e7ebe5f49dedbd9d2c
-09761a761fa74fcf1d8dbf79533b1031bee8c31f1b234fa179372b55a90e4bf3
-59bc64a02477e74f01
 ```
 
 ---
@@ -2005,3 +1956,182 @@ d29d9491f00b997d28bd3ca8fde1b82657215295053a93303ba541d64f49924f5475dee1f047d2f5
 | Invalid Input | `endpoint = "https://evil.com/api"` |
 
 **Expected:** URLs matching pattern succeed.
+
+### A.25.6 All (AND) Constraint
+
+**A.25.6 All**
+
+| Field | Value |
+|-------|-------|
+| ID | `tnu_wrt_019471f8000070008000000000002506` |
+| Type | Execution |
+| Depth | 0 |
+| Max Depth | 3 |
+| Issued At | `1704067200` |
+| Expires At | `1704070800` |
+| Holder | `ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1` |
+| Issuer | `8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c` |
+
+**Payload CBOR (252 bytes):**
+```
+aa00010150019471f8000070008000000000002506020003a1687472616e7366
+6572a16b636f6e73747261696e7473a266616d6f756e74820ca16b636f6e7374
+7261696e7473818203a4636d696ef90000636d6178f970e26d6d696e5f696e63
+6c7573697665f56d6d61785f696e636c7573697665f56863757272656e637982
+0ca16b636f6e73747261696e7473818204a16676616c75657382635553446345
+55520482015820ed4928c628d1c2c6eae90338905995612959273a5c63f93636
+c14614ac8737d105820158208a88e3dd7409f195fd52db2d3cba5d72ca6709bf
+1d94121bf3748801b40f6f5c061a65920080071a65920e9008031200
+```
+
+**Signature (64 bytes):**
+```
+b3127cf3f2d29e724c214d7cf57544ca51c5bed74271b92b08c68a329b872bf091c43fa91c1f7e42876b153d0a69fa6aa340637f03a4c25b1d5b211483766009
+```
+
+| Valid Input | `amount = 500.0, currency = "USD"` |
+| Invalid Input | `amount = 500.0, currency = "GBP"` |
+
+**Expected:** All nested constraints must pass (AND logic).
+
+### A.25.7 Any (OR) Constraint
+
+**A.25.7 Any**
+
+| Field | Value |
+|-------|-------|
+| ID | `tnu_wrt_019471f8000070008000000000002507` |
+| Type | Execution |
+| Depth | 0 |
+| Max Depth | 3 |
+| Issued At | `1704067200` |
+| Expires At | `1704070800` |
+| Holder | `ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1` |
+| Issuer | `8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c` |
+
+**Payload CBOR (202 bytes):**
+```
+aa00010150019471f8000070008000000000002507020003a169726561645f66
+696c65a16b636f6e73747261696e7473a16470617468820da16b636f6e737472
+61696e7473828202a1677061747465726e692f7075626c69632f2a8202a16770
+61747465726e692f7368617265642f2a0482015820ed4928c628d1c2c6eae903
+38905995612959273a5c63f93636c14614ac8737d105820158208a88e3dd7409
+f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c061a65920080
+071a65920e9008031200
+```
+
+**Signature (64 bytes):**
+```
+93291b5488044cee88e82388e634984b55d13a3640db96934d82772b49cf2e59b1fc8cd4644c07e20f01fa6b97f69fef5bd0319b2c7db2a5342a65ff3892970f
+```
+
+| Valid Input | `path = "/public/readme.txt"` |
+| Valid Input | `path = "/shared/data.json"` |
+| Invalid Input | `path = "/private/secret.txt"` |
+
+**Expected:** At least one nested constraint must pass (OR logic).
+
+### A.25.8 Not Constraint
+
+**A.25.8 Not**
+
+| Field | Value |
+|-------|-------|
+| ID | `tnu_wrt_019471f8000070008000000000002508` |
+| Type | Execution |
+| Depth | 0 |
+| Max Depth | 3 |
+| Issued At | `1704067200` |
+| Expires At | `1704070800` |
+| Holder | `ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1` |
+| Issuer | `8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c` |
+
+**Payload CBOR (179 bytes):**
+```
+aa00010150019471f8000070008000000000002508020003a169726561645f66
+696c65a16b636f6e73747261696e7473a16470617468820ea16a636f6e737472
+61696e748202a1677061747465726e692f7365637265742f2a0482015820ed49
+28c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d10582
+0158208a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b4
+0f6f5c061a65920080071a65920e9008031200
+```
+
+**Signature (64 bytes):**
+```
+c598b333e34d6a09f41b3770566b4c621481440fe3ff4a3b2e14a7461c7ac10de5b92a4c5fe3786f5e8b8c9bea5bf1fbbba385b4fc87b835dc97304cbd193d0c
+```
+
+| Valid Input | `path = "/public/readme.txt"` |
+| Invalid Input | `path = "/secret/keys.txt"` |
+
+**Expected:** Constraint passes only when inner constraint fails (negation).
+
+---
+
+## Implementation Notes
+
+### CBOR Wire Format
+
+Payload fields use integer keys:
+
+| Key | Field |
+|-----|-------|
+| 0 | version |
+| 1 | id |
+| 2 | warrant_type |
+| 3 | tools |
+| 4 | holder |
+| 5 | issuer |
+| 6 | issued_at |
+| 7 | expires_at |
+| 8 | max_depth |
+| 9 | parent_hash (optional) |
+| 10 | extensions (optional) |
+| 11 | issuable_tools (optional) |
+| 12 | (reserved) |
+| 13 | max_issue_depth (optional) |
+| 14 | constraint_bounds (optional) |
+| 15 | required_approvers (optional) |
+| 16 | min_approvals (optional) |
+| 17 | clearance (optional) |
+| 18 | depth |
+
+### Signature Message
+
+The signature is computed over a domain-separated message:
+
+```
+message = b"tenuo-warrant-v1" || envelope_version || payload_cbor_bytes
+signature = Ed25519.sign(issuer_key, message)
+```
+
+Where `envelope_version` is `0x01` for v1 warrants.
+
+### Constraint Type IDs
+
+| Type | ID |
+|------|-----|
+| Exact | 1 |
+| Pattern | 2 |
+| Range | 3 |
+| OneOf | 4 |
+| Cidr | 8 |
+| UrlPattern | 9 |
+| Contains | 10 |
+| Subset | 11 |
+| All | 12 |
+| Any | 13 |
+| Not | 14 |
+| Wildcard | 16 |
+| Subpath | 17 |
+| UrlSafe | 18 |
+
+> **Note:** For the complete list of 18 constraint types (IDs 1-18) including Regex (5), NotOneOf (7), and Cel (15), see [wire-format-v1.md §6](wire-format-v1.md#6-constraint-types).
+
+---
+
+## References
+
+- **[RFC 8032]** Josefsson, S., Liusvaara, I., "Edwards-Curve Digital Signature Algorithm (EdDSA)", January 2017. https://datatracker.ietf.org/doc/html/rfc8032
+- **[RFC 8949]** Bormann, C., Hoffman, P., "Concise Binary Object Representation (CBOR)", December 2020. https://datatracker.ietf.org/doc/html/rfc8949
+- **[protocol-spec-v1.md]** Tenuo Protocol Specification

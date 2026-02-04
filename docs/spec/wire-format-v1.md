@@ -1,8 +1,9 @@
 # Tenuo Wire Format Specification
 
-**Version:** 1.0
-**Status:** Normative
-**Date:** 2026-01-01
+**Version:** 1.0  
+**Status:** Normative  
+**Date:** 2026-01-01  
+
 **Documentation Revision:** 3 (2026-01-21)
 
 **Related Documents:**
@@ -1517,6 +1518,8 @@ pub struct ApprovalMetadata {
 - **Extensibility**: Add metadata fields without changing signature format
 - **Consistency**: Same pattern as `SignedWarrant`/`WarrantPayload`
 - **No re-serialization**: Verify against exact bytes that were signed
+
+> **Note:** Unlike warrants (which use integer keys for compactness), approvals and revocation structures use string-keyed CBOR maps. This prioritizes debuggability and auditability over wire efficiency, appropriate for infrequent human-in-the-loop operations.
 
 ### Field Semantics
 

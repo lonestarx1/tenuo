@@ -2,8 +2,10 @@
 
 **Version:** 1.0  
 **Status:** Normative  
-**Date:** 2026-01-01
+**Date:** 2026-01-01  
+
 **Documentation Revision:** 3 (2026-01-21)
+
 **Authors:** Niki Aimable Niyikiza
 
 **Related Documents:**
@@ -428,7 +430,7 @@ if chain[0].issuer() not in verifier.trusted_roots:
 | Same warrant ID twice | BLOCKED (cycle detection) |
 | Holder A->B->A (different warrants) | ALLOWED (monotonicity makes it safe) |
 | Self-delegation (Execution→Execution) | ALLOWED (holder can narrow their own capabilities) |
-| Self-issuance (Issuer→Execution) | BLOCKED (issuer cannot grant execution to themselves, P-LLM/Q-LLM separation) |
+| Self-issuance (Issuer→Execution) | BLOCKED (enforces separation between planners who delegate and workers who execute) |
 
 ---
 
@@ -672,7 +674,7 @@ This domain separation prevents cross-protocol signature reuse.
 | `tool_not_allowed` | Tool not in warrant's capabilities |
 | `constraint_not_satisfied` | Argument violates constraint |
 | `unknown_field` | Payload contains unknown CBOR keys |
-| `self_issuance` | Issuer→Execution transition where issuer grants execution to themselves (violates P-LLM/Q-LLM separation) |
+| `self_issuance` | Issuer→Execution transition where issuer grants execution to themselves (violates planner/worker separation) |
 | `revoked` | Warrant ID appears in active Signed Revocation List |
 
 ---
