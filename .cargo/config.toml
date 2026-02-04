@@ -1,12 +1,61 @@
-# Linker configuration for building Python extensions on Mac
+# ============================================================================
+# Build Performance & Linker Configuration
+# ============================================================================
+
+[build]
+# Use all available CPU cores for rustc parallelism
+jobs = -1
+
+# Incremental compilation (on by default for dev, explicit for clarity)
+[profile.dev]
+incremental = true
+
+# ============================================================================
+# Platform-specific linker settings
+# ============================================================================
+
+# macOS x86_64
 [target.x86_64-apple-darwin]
 rustflags = [
   "-C", "link-arg=-undefined",
   "-C", "link-arg=dynamic_lookup",
 ]
+# Optional: Install zld for 2-5x faster linking: brew install michaeleisel/zld/zld
+# Then uncomment: linker = "clang"
+# And add to rustflags: "-C", "link-arg=-fuse-ld=/usr/local/bin/zld",
 
+# macOS ARM (Apple Silicon)
 [target.aarch64-apple-darwin]
 rustflags = [
   "-C", "link-arg=-undefined",
   "-C", "link-arg=dynamic_lookup",
 ]
+# Optional: Install zld for 2-5x faster linking: brew install michaeleisel/zld/zld
+# Then uncomment: linker = "clang"
+# And add to rustflags: "-C", "link-arg=-fuse-ld=/opt/homebrew/bin/zld",
+
+# Linux x86_64
+[target.x86_64-unknown-linux-gnu]
+# Optional: Install mold for 2-5x faster linking: sudo apt install mold
+# Then uncomment:
+# linker = "clang"
+# rustflags = ["-C", "link-arg=-fuse-ld=mold"]
+
+# Linux ARM
+[target.aarch64-unknown-linux-gnu]
+# Optional: Install mold for 2-5x faster linking
+# linker = "clang"
+# rustflags = ["-C", "link-arg=-fuse-ld=mold"]
+
+# ============================================================================
+# Environment variables for additional speedups
+# ============================================================================
+# 
+# sccache (shared compilation cache):
+#   cargo install sccache
+#   export RUSTC_WRAPPER=sccache
+#
+# cargo-nextest (faster test runner):
+#   cargo install cargo-nextest
+#   cargo nextest run
+# ============================================================================

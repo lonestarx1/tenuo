@@ -637,15 +637,26 @@ impl Default for HeartbeatConfig {
 }
 
 /// Request body for authorizer registration.
+/// Fields are flattened to match the Go control plane's expected format.
 #[derive(Serialize)]
 struct RegisterRequest<'a> {
     name: &'a str,
     #[serde(rename = "type")]
     authorizer_type: &'a str,
     version: &'a str,
-    /// Environment information
+    // Flattened environment fields (Go control plane expects these at top level)
     #[serde(skip_serializing_if = "Option::is_none")]
-    environment: Option<&'a EnvironmentInfo>,
+    environment: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    k8s_namespace: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    k8s_pod_name: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    k8s_cluster: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cloud_provider: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cloud_region: Option<&'a str>,
 }
 
 /// Response from authorizer registration.
@@ -1026,22 +1037,18 @@ async fn register_with_retry(client: &Client, config: &HeartbeatConfig) -> Optio
 async fn register(client: &Client, config: &HeartbeatConfig) -> Result<String, HeartbeatError> {
     let url = format!("{}/v1/authorizers/register", config.control_plane_url);
 
-    // Include environment info if any fields are set
-    let env_info = if config.environment.k8s_namespace.is_some()
-        || config.environment.k8s_pod_name.is_some()
-        || config.environment.cloud_provider.is_some()
-        || config.environment.environment.is_some()
-    {
-        Some(&config.environment)
-    } else {
-        None
-    };
-
+    // Build request with flattened environment fields
+    let env = &config.environment;
     let request_body = RegisterRequest {
         name: &config.authorizer_name,
         authorizer_type: &config.authorizer_type,
         version: &config.version,
-        environment: env_info,
+        environment: env.environment.as_deref(),
+        k8s_namespace: env.k8s_namespace.as_deref(),
+        k8s_pod_name: env.k8s_pod_name.as_deref(),
+        k8s_cluster: env.k8s_cluster.as_deref(),
+        cloud_provider: env.cloud_provider.as_deref(),
+        cloud_region: env.cloud_region.as_deref(),
     };
 
     let response = client

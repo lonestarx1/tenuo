@@ -37,7 +37,7 @@ python-extension = ["pyo3/extension-module", "python"]
 
 # Server features (adds HTTP/gRPC + structured logging dependencies)
 # Includes reqwest for control plane heartbeat functionality
-server = ["tokio", "axum", "tower", "tracing", "reqwest"]
+server = ["tokio", "axum", "tower", "tracing", "tracing-subscriber", "reqwest"]
 
 # HTTP client (for demo agents that call remote services)
 http-client = ["reqwest"]
@@ -141,6 +141,7 @@ tokio = { version = "1.35", features = ["full"], optional = true }
 axum = { version = "0.7", optional = true }
 tower = { version = "0.4", optional = true }
 tracing = { version = "0.1", optional = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }
 
 # CLI dependencies
 clap = { version = "4.4", features = ["derive", "env"] }
