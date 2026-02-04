@@ -184,7 +184,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
     // Build authorizer from trusted keys and revocation list
-    let (authorizer, initial_srl_version) = build_authorizer(&cli.trusted_keys, &cli.revocation_list)?;
+    let (authorizer, initial_srl_version) =
+        build_authorizer(&cli.trusted_keys, &cli.revocation_list)?;
 
     match &cli.command {
         Commands::Serve { port, config, bind } => {
