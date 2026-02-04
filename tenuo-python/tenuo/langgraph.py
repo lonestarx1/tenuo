@@ -52,6 +52,10 @@ from .bound_warrant import BoundWarrant
 from .keys import KeyRegistry, load_signing_key_from_env
 from tenuo_core import Warrant
 
+# Check version compatibility on import (warns, doesn't fail)
+from tenuo._version_compat import check_langgraph_compat  # noqa: E402
+check_langgraph_compat()
+
 # Optional LangGraph imports
 try:
     from langgraph.prebuilt import ToolNode  # type: ignore
@@ -244,7 +248,6 @@ def guard_node(
         config: Optional[Dict[str, Any]] = None,
         **kwargs: Any,
     ) -> Any:
-        # print(f"DEBUG: wrapper called. config type: {type(config)}. kwargs: {kwargs.keys()}")
         if config is None and "config" in kwargs:
             config = kwargs["config"]
 

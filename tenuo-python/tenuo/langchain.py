@@ -44,6 +44,10 @@ from .exceptions import (
 from .schemas import ToolSchema, TOOL_SCHEMAS, _get_tool_name
 from .audit import log_authorization_success
 
+# Check version compatibility on import (warns, doesn't fail)
+from tenuo._version_compat import check_langchain_compat  # noqa: E402
+check_langchain_compat()
+
 # Optional LangChain import
 try:
     from langchain_core.tools import BaseTool, StructuredTool
