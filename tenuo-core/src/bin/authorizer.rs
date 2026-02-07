@@ -740,7 +740,14 @@ async fn handle_request(
             // Record metrics
             if let Some(ref metrics) = state.metrics {
                 metrics
-                    .record_authorization(false, &route_match.route.tool, 0, "", None, Some("missing_warrant"))
+                    .record_authorization(
+                        false,
+                        &route_match.route.tool,
+                        0,
+                        "",
+                        None,
+                        Some("missing_warrant"),
+                    )
                     .await;
             }
 
@@ -790,7 +797,14 @@ async fn handle_request(
             // Record metrics
             if let Some(ref metrics) = state.metrics {
                 metrics
-                    .record_authorization(false, &route_match.route.tool, 0, "", None, Some("invalid_warrant"))
+                    .record_authorization(
+                        false,
+                        &route_match.route.tool,
+                        0,
+                        "",
+                        None,
+                        Some("invalid_warrant"),
+                    )
                     .await;
             }
 
