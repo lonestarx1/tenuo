@@ -718,6 +718,32 @@ async fn handle_request(
                 reason = "missing_warrant",
                 "Missing warrant header"
             );
+
+            // Emit audit event for missing warrant (so denials appear in receipts/audit)
+            emit_audit_event(
+                &state,
+                AuthorizationEvent::deny(
+                    String::new(), // Filled by emit_audit_event
+                    String::new(), // No warrant ID
+                    route_match.route.tool.to_string(),
+                    "missing_warrant".to_string(),
+                    None,
+                    0,
+                    None,
+                    None,
+                    0,
+                    request_id.clone(),
+                ),
+            )
+            .await;
+
+            // Record metrics
+            if let Some(ref metrics) = state.metrics {
+                metrics
+                    .record_authorization(false, &route_match.route.tool, 0, "", None, Some("missing_warrant"))
+                    .await;
+            }
+
             return (
                 StatusCode::UNAUTHORIZED,
                 Json(json!({
@@ -742,6 +768,32 @@ async fn handle_request(
                 error = %e,
                 "Failed to decode warrant/chain"
             );
+
+            // Emit audit event for invalid warrant
+            emit_audit_event(
+                &state,
+                AuthorizationEvent::deny(
+                    String::new(), // Filled by emit_audit_event
+                    String::new(), // No warrant ID
+                    route_match.route.tool.to_string(),
+                    format!("invalid_warrant: {}", e),
+                    None,
+                    0,
+                    None,
+                    None,
+                    0,
+                    request_id.clone(),
+                ),
+            )
+            .await;
+
+            // Record metrics
+            if let Some(ref metrics) = state.metrics {
+                metrics
+                    .record_authorization(false, &route_match.route.tool, 0, "", None, Some("invalid_warrant"))
+                    .await;
+            }
+
             return (
                 StatusCode::BAD_REQUEST,
                 Json(json!({
