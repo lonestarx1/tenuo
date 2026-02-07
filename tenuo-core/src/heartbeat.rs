@@ -163,12 +163,13 @@ pub struct SignedEvent {
 }
 
 /// CBOR signing payload format (matches Go control plane's AuthorizerReceiptPayload).
-/// Uses integer keys for compact encoding.
+/// Uses string keys "1", "2", etc. via serde(rename).
+/// IMPORTANT: warrant_chain uses serde_bytes to encode as CBOR byte string (not array).
 #[derive(serde::Serialize)]
 struct ReceiptSigningPayload<'a> {
     #[serde(rename = "1")]
     authorizer_id: &'a str,
-    #[serde(rename = "2")]
+    #[serde(rename = "2", with = "serde_bytes")]
     warrant_chain: &'a [u8],
     #[serde(rename = "3")]
     action: &'a str,
@@ -1560,5 +1561,41 @@ mod tests {
         let resp: SrlResponse = serde_json::from_str(json).unwrap();
         assert_eq!(resp.srl, "dGVzdA==");
         assert_eq!(resp.version, 5);
+    }
+
+    #[test]
+    fn test_receipt_signing_payload_cbor_encoding() {
+        // This test verifies the exact CBOR encoding of the signing payload
+        // so we can compare with Go's encoding for cross-language compatibility.
+        let payload = ReceiptSigningPayload {
+            authorizer_id: "test",
+            warrant_chain: &[1, 2, 3],
+            action: "hello",
+            outcome: "world",
+            timestamp: 42,
+            root_principal: None,
+        };
+
+        let mut buf = Vec::new();
+        ciborium::into_writer(&payload, &mut buf).unwrap();
+
+        let hex_str: String = buf.iter().map(|b| format!("{:02x}", b)).collect();
+        println!("Rust CBOR hex: {}", hex_str);
+
+        // Verify it's a map with string keys
+        // First byte should be 0xa5 (map of 5 items, since root_principal is None)
+        assert_eq!(buf[0], 0xa5, "Expected CBOR map of 5 items");
+
+        // Verify the key "1" is a text string (0x61 = text of 1 byte, then 0x31 = '1')
+        assert_eq!(buf[1], 0x61, "Key should be 1-byte text string");
+        assert_eq!(buf[2], 0x31, "Key should be ASCII '1'");
+
+        // Now test with Go's expected encoding:
+        // Go string keys: a56131647465737461324301020361336568656c6c6f613465776f726c646135182a
+        let go_hex = "a56131647465737461324301020361336568656c6c6f613465776f726c646135182a";
+        assert_eq!(
+            hex_str, go_hex,
+            "Rust CBOR encoding must match Go encoding for signature verification"
+        );
     }
 }
