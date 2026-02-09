@@ -38,6 +38,7 @@ Requirements:
 """
 
 import json
+from typing import Optional
 
 # Universal constraints (work with any integration)
 from tenuo import (
@@ -92,7 +93,7 @@ class MockOpenAIClient:
                 @dataclass
                 class Message:
                     role: str
-                    content: str | None
+                    content: Optional[str]
                     tool_calls: list
 
                 @dataclass
