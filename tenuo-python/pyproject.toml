@@ -71,6 +71,15 @@ a2a = [
 google_adk = [
     "google-adk>=0.1",  # Google Agent Development Kit
 ]
+temporal = [
+    "temporalio>=1.4.0",  # Temporal workflow orchestration
+    "boto3>=1.26.0",  # AWS Secrets Manager for key resolution
+    "google-cloud-secret-manager>=2.16.0",  # GCP Secret Manager for key resolution
+]
+fastapi = [
+    "fastapi>=0.100.0",
+    "uvicorn>=0.20.0",  # ASGI server for FastAPI
+]
 
 # Development dependencies (includes features + tools)
 dev = [
@@ -88,7 +97,7 @@ dev = [
     "uvicorn",
     "langchain-openai",
     # Include ALL optional groups for complete dev environment
-    "tenuo[openai,autogen,langchain,langgraph,crewai,a2a,google_adk,fastapi,mcp]",
+    "tenuo[openai,autogen,langchain,langgraph,crewai,a2a,google_adk,fastapi,mcp,temporal]",
 ]
 
 [project.scripts]
