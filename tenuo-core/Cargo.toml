@@ -103,7 +103,7 @@ base64 = "0.22"
 chrono = { version = "0.4", features = ["serde"] }
 
 # Network handling
-ipnetwork = "0.20"
+ipnetwork = "0.21"
 url = "2.5"
 
 # HTTP client (optional - only needed for demo binaries)
