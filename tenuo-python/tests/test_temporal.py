@@ -783,36 +783,54 @@ class TestGCPSecretManagerKeyResolver:
     def _gcp_mock_context(mock_sm):
         """Context manager that makes ``from google.cloud import secretmanager``
         resolve to *mock_sm*, regardless of whether google-cloud-secret-manager
-        is actually installed.  Works with namespace packages."""
+        is actually installed.
+
+        Handles two scenarios:
+        - google.cloud already in sys.modules (local dev with google-adk):
+          sets the secretmanager attribute on the existing namespace package.
+        - google.cloud NOT in sys.modules (CI without any google packages):
+          injects stub modules for google and google.cloud too.
+        """
         import contextlib
         import sys
+        import types
         from unittest.mock import patch
 
         @contextlib.contextmanager
         def _ctx():
-            # Inject into sys.modules so the import system finds it
-            with patch.dict(sys.modules, {
+            # Build the modules dict we need to inject
+            modules_to_inject: dict = {
                 "google.cloud.secretmanager": mock_sm,
-            }):
-                # Also set the attribute on the real google.cloud package
-                # (needed for namespace packages where the import statement
-                # checks the parent's __dict__ rather than sys.modules).
-                gc = sys.modules.get("google.cloud")
-                had_attr = hasattr(gc, "secretmanager") if gc else False
-                old_attr = getattr(gc, "secretmanager", None) if gc else None
-                if gc is not None:
-                    gc.secretmanager = mock_sm  # type: ignore[attr-defined]
+            }
+
+            # If google / google.cloud aren't in sys.modules yet (CI),
+            # create stub namespace modules so the import chain resolves.
+            if "google" not in sys.modules:
+                mock_google = types.ModuleType("google")
+                mock_google.__path__ = []  # type: ignore[attr-defined]
+                modules_to_inject["google"] = mock_google
+            if "google.cloud" not in sys.modules:
+                mock_gc = types.ModuleType("google.cloud")
+                mock_gc.__path__ = []  # type: ignore[attr-defined]
+                modules_to_inject["google.cloud"] = mock_gc
+
+            with patch.dict(sys.modules, modules_to_inject):
+                # Set the attribute on google.cloud so
+                # ``from google.cloud import secretmanager`` finds it.
+                gc = sys.modules["google.cloud"]
+                had_attr = hasattr(gc, "secretmanager")
+                old_attr = getattr(gc, "secretmanager", None)
+                gc.secretmanager = mock_sm  # type: ignore[attr-defined]
                 try:
                     yield
                 finally:
-                    if gc is not None:
-                        if had_attr:
-                            gc.secretmanager = old_attr  # type: ignore[attr-defined]
-                        else:
-                            try:
-                                delattr(gc, "secretmanager")
-                            except AttributeError:
-                                pass
+                    if had_attr:
+                        gc.secretmanager = old_attr  # type: ignore[attr-defined]
+                    else:
+                        try:
+                            delattr(gc, "secretmanager")
+                        except AttributeError:
+                            pass
         return _ctx()
 
     def test_resolves_secret(self):
