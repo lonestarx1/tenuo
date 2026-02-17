@@ -202,22 +202,42 @@ guard = (GuardBuilder()
 crew = guard.protect(my_crew)  # All agents get enforced constraints
 ```
 
-**Temporal** - Durable workflows with warrant-based activity authorization
+**Temporal** - Durable workflows with warrant-based activity authorization + Proof-of-Possession
 ```python
-from tenuo.temporal import TenuoInterceptor, TenuoInterceptorConfig, EnvKeyResolver
-
-interceptor = TenuoInterceptor(
-    TenuoInterceptorConfig(key_resolver=EnvKeyResolver())
+from tenuo.temporal import (
+    TenuoInterceptor, TenuoInterceptorConfig, TenuoClientInterceptor,
+    EnvKeyResolver, tenuo_headers, tenuo_execute_activity,
 )
 
-worker = Worker(
-    client,
-    task_queue="queue",
-    workflows=[MyWorkflow],
-    activities=[read_file, write_file],
-    interceptors=[interceptor],  # Activities automatically authorized
+# Client side: inject warrant into workflow headers
+client_interceptor = TenuoClientInterceptor()
+client = await Client.connect("localhost:7233", interceptors=[client_interceptor])
+
+client_interceptor.set_headers(tenuo_headers(warrant, "agent-1", signing_key))
+result = await client.execute_workflow(MyWorkflow.run, args=[...], ...)
+
+# Worker side: authorize activities with full PoP verification
+worker_interceptor = TenuoInterceptor(TenuoInterceptorConfig(
+    key_resolver=EnvKeyResolver(),
+    trusted_roots=[control_key.public_key],  # enables Authorizer + PoP
+))
+
+worker = Worker(client, task_queue="queue",
+    workflows=[MyWorkflow], activities=[read_file, write_file],
+    interceptors=[worker_interceptor],
+    workflow_runner=UnsandboxedWorkflowRunner(),
 )
 ```
+Inside workflows, use `tenuo_execute_activity()` to automatically sign PoP challenges:
+```python
+@workflow.defn
+class MyWorkflow:
+    @workflow.run
+    async def run(self, path: str) -> str:
+        return await tenuo_execute_activity(read_file, args=[path], ...)
+```
+
+**Examples:** [`demo.py`](tenuo-python/examples/temporal/demo.py) — Basic warrant enforcement | [`multi_warrant.py`](tenuo-python/examples/temporal/multi_warrant.py) — Multi-tenant isolation | [`delegation.py`](tenuo-python/examples/temporal/delegation.py) — Per-stage pipeline authorization
 
 **FastAPI** - Extracts warrant from headers, verifies PoP offline
 ```python

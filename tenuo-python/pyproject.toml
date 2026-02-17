@@ -116,6 +116,9 @@ python-packages = ["tenuo"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "temporal_live: tests that require an in-process Temporal server (slow, ~2-5s each)",
+]
 
 [tool.ruff]
 line-length = 120

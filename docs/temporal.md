@@ -13,7 +13,7 @@ Tenuo integrates with [Temporal](https://temporal.io) to bring warrant-based aut
 
 **Key Features:**
 - **Activity-level authorization**: Each activity execution is authorized against warrant constraints
-- **Proof-of-Possession (PoP)**: Mandatory signature verification using Temporal's `scheduled_time` (replay-safe)
+- **Proof-of-Possession (PoP)**: Ed25519 signature verification when `trusted_roots` is configured
 - **Warrant propagation**: Warrants flow through workflow headers automatically
 - **Child workflow delegation**: Attenuate warrants when spawning child workflows
 - **Fail-closed**: Missing or invalid warrants block execution by default
@@ -36,79 +36,86 @@ Requires Temporal server running locally or in production.
 ### Basic Workflow Protection
 
 ```python
+from datetime import timedelta
+from pathlib import Path
 from temporalio import activity, workflow
 from temporalio.client import Client
+from temporalio.common import RetryPolicy
 from temporalio.worker import Worker
 
-from tenuo_core import SigningKey, IssuanceBuilder, Subpath
+from tenuo import SigningKey, Warrant
+from tenuo_core import Subpath
 from tenuo.temporal import (
+    AuthorizedWorkflow,
     TenuoInterceptor,
     TenuoInterceptorConfig,
+    TenuoClientInterceptor,
     EnvKeyResolver,
     tenuo_headers,
-    current_warrant,
+    tenuo_execute_activity,
 )
 
-# Define protected activities
+# Define protected activities (no Tenuo-specific code needed)
 @activity.defn
 async def read_file(path: str) -> str:
-    """Read file - protected by Tenuo."""
     return Path(path).read_text()
 
 @activity.defn
 async def write_file(path: str, content: str) -> str:
-    """Write file - protected by Tenuo."""
     Path(path).write_text(content)
     return f"Wrote {len(content)} bytes"
 
-# Define workflow
+# Define workflow — use AuthorizedWorkflow for automatic PoP calculation
 @workflow.defn
-class DataProcessingWorkflow:
+class DataProcessingWorkflow(AuthorizedWorkflow):
     @workflow.run
     async def run(self, input_path: str, output_path: str) -> str:
-        # Access warrant from context
-        warrant = current_warrant()
-
-        # Read input file
-        data = await workflow.execute_activity(
+        # Automatic PoP signature generation via self.execute_authorized_activity
+        data = await self.execute_authorized_activity(
             read_file,
             args=[input_path],
             start_to_close_timeout=timedelta(seconds=30),
+            retry_policy=RetryPolicy(maximum_attempts=1),
         )
 
-        # Process and write output
         processed = data.upper()
-        await workflow.execute_activity(
+        
+        await self.execute_authorized_activity(
             write_file,
             args=[output_path, processed],
             start_to_close_timeout=timedelta(seconds=30),
+            retry_policy=RetryPolicy(maximum_attempts=1),
         )
 
         return f"Processed {len(data)} bytes"
 
 # Setup
 async def main():
-    client = await Client.connect("localhost:7233")
+    # Client interceptor injects warrant headers into workflow start
+    client_interceptor = TenuoClientInterceptor()
+    client = await Client.connect("localhost:7233",
+                                  interceptors=[client_interceptor])
 
     # Generate keys
     control_key = SigningKey.generate()
     agent_key = SigningKey.generate()
 
-    # Issue warrant
+    # Issue warrant using the builder API
     warrant = (
-        IssuanceBuilder()
-        .holder(agent_key.public_key())
-        .capability("read_file", {"path": Subpath("/data/input")})
-        .capability("write_file", {"path": Subpath("/data/output")})
+        Warrant.mint_builder()
+        .holder(agent_key.public_key)
+        .capability("read_file", path=Subpath("/data/input"))
+        .capability("write_file", path=Subpath("/data/output"))
         .ttl(3600)
         .mint(control_key)
     )
 
-    # Configure interceptor
+    # Configure worker interceptor with full PoP verification
     interceptor = TenuoInterceptor(
         TenuoInterceptorConfig(
             key_resolver=EnvKeyResolver(),
             on_denial="raise",
+            trusted_roots=[control_key.public_key],  # enables Authorizer + PoP
         )
     )
 
@@ -118,24 +125,26 @@ async def main():
         task_queue="data-processing",
         workflows=[DataProcessingWorkflow],
         activities=[read_file, write_file],
-        interceptors=[interceptor],  # Add Tenuo interceptor
+        interceptors=[interceptor],
     ):
-        # Execute workflow with warrant
+        # Set warrant headers, then execute workflow
+        client_interceptor.set_headers(
+            tenuo_headers(warrant, "agent-key-1", agent_key)
+        )
         result = await client.execute_workflow(
             DataProcessingWorkflow.run,
             args=["/data/input/report.txt", "/data/output/report.txt"],
             id="process-001",
             task_queue="data-processing",
-            headers=tenuo_headers(warrant, "agent-key-1", agent_key),
         )
 ```
 
 **What happens:**
-1. Workflow starts with warrant in headers
-2. Each activity execution is intercepted
-3. Warrant constraints are checked (path must match Subpath)
-4. Proof-of-Possession signature is verified
-5. Activity executes only if authorized
+1. `TenuoClientInterceptor` injects warrant + signing key into workflow headers
+2. Each `tenuo_execute_activity()` call computes a PoP signature via `warrant.sign()`
+3. `TenuoActivityInboundInterceptor` extracts the warrant and PoP from module-level stores
+4. `Authorizer.authorize()` verifies chain, expiry, capabilities, constraints, and PoP
+5. Activity executes only if all checks pass
 
 ---
 
@@ -149,6 +158,7 @@ from tenuo.temporal import TenuoInterceptorConfig
 config = TenuoInterceptorConfig(
     key_resolver=EnvKeyResolver(),        # Required: key resolution strategy
     on_denial="raise",                    # "raise" | "log" | "skip"
+    trusted_roots=[control_key.public_key],  # Enables Authorizer + PoP verification
     require_warrant=True,                 # Fail-closed: deny if no warrant
     block_local_activities=True,          # Prevent local activity bypass
     redact_args_in_logs=True,             # Prevent secret leaks in logs
@@ -200,7 +210,7 @@ resolver = CompositeKeyResolver([
 
 ## Proof-of-Possession
 
-Tenuo enforces mandatory PoP verification for all activity executions. The challenge is computed deterministically using Temporal's `scheduled_time` for replay safety.
+When `trusted_roots` is configured, Tenuo enforces PoP verification for all activity executions. The challenge is a CBOR-serialized tuple of `(warrant_id, tool, sorted_args, window_ts)` signed with the holder's Ed25519 key.
 
 ### Automatic PoP with tenuo_execute_activity
 
@@ -220,35 +230,46 @@ class MyWorkflow:
         return result
 ```
 
-### Manual PoP (advanced)
+## Manual Activity Execution
+
+For advanced use cases (e.g., multi-warrant workflows or delegation) where `AuthorizedWorkflow` is too restrictive, use the `tenuo_execute_activity` helper directly:
 
 ```python
-# If you need full control over activity execution
-from temporalio import workflow
-from tenuo.temporal import current_warrant, current_key_id
+from tenuo.temporal import tenuo_execute_activity
 
-info = workflow.info()
-warrant = current_warrant()
-
-# Compute challenge
-challenge = warrant.compute_pop_challenge(
-    workflow_id=info.workflow_id,
-    activity_id=info.activity_id,
-    tool_name="read_file",
-    args={"path": "/data/file.txt"},
-    scheduled_time=workflow.now(),
-)
-
-# Sign with holder key
-pop_signature = signing_key.sign(challenge)
-
-# Pass as header
-await workflow.execute_activity(
-    read_file,
-    args=["/data/file.txt"],
-    headers={"x-tenuo-pop": base64.b64encode(pop_signature)},
-)
+@workflow.defn
+class PipelineWorkflow:
+    @workflow.run
+    async def run(self, path: str) -> str:
+        # Manually specify timeouts and retry policy
+        return await tenuo_execute_activity(
+            read_file,
+            args=[path],
+            start_to_close_timeout=timedelta(seconds=30),
+            retry_policy=RetryPolicy(maximum_attempts=3),
+        )
 ```
+
+### PoP Challenge Format
+
+The PoP signature is computed deterministically by the Rust core:
+
+```
+domain_context = b"tenuo-pop-v1"
+window_ts      = (unix_now // 30) * 30          # 30-second bucket
+challenge_data = CBOR( (warrant_id, tool, sorted_args, window_ts) )
+preimage       = domain_context || challenge_data
+signature      = Ed25519.sign(signing_key, preimage)   # 64 bytes
+```
+
+In Python, this is a single call:
+
+```python
+pop_signature = warrant.sign(signing_key, "read_file", {"path": "/data/file.txt"})
+# Returns 64 raw bytes; valid for 4 windows (2 minutes)
+```
+
+`tenuo_execute_activity()` handles this automatically. You only need `warrant.sign()` directly if building custom tooling outside of Temporal.
 
 ---
 
@@ -385,7 +406,7 @@ All security checks default to deny:
 
 ### Replay Safety
 
-PoP challenges use Temporal's `scheduled_time` instead of wall clock time. This ensures deterministic replay without breaking workflow history.
+PoP challenges use 30-second time-window bucketing (`floor(unix_now / 30) * 30`) for replay tolerance. Signatures remain valid for 4 windows (2 minutes). The `tenuo_execute_activity()` helper handles PoP signing inside the workflow sandbox via module-level stores, avoiding issues with Temporal's deterministic replay.
 
 ---
 
@@ -418,45 +439,44 @@ from tenuo.temporal import (
 
 ---
 
-## Example: Multi-Stage Pipeline
+## Examples
+
+| Example | Description |
+|---------|-------------|
+| [`demo.py`](https://github.com/tenuo-ai/tenuo/tree/main/tenuo-python/examples/temporal/demo.py) | Basic warrant enforcement with authorized / unauthorized access |
+| [`multi_warrant.py`](https://github.com/tenuo-ai/tenuo/tree/main/tenuo-python/examples/temporal/multi_warrant.py) | Multi-tenant isolation: separate warrants per workflow |
+| [`delegation.py`](https://github.com/tenuo-ai/tenuo/tree/main/tenuo-python/examples/temporal/delegation.py) | Per-stage pipeline authorization with least-privilege warrants |
+
+### Per-Stage Pipeline (from delegation.py)
+
+Each pipeline stage gets its own tightly-scoped warrant:
 
 ```python
-from temporalio import workflow
-from tenuo.temporal import current_warrant, attenuated_headers, tenuo_execute_activity
+# Ingest warrant: read-only
+ingest_warrant = (
+    Warrant.mint_builder()
+    .holder(ingest_key.public_key)
+    .capability("read_file", path=Subpath("/data/source"))
+    .capability("list_directory", path=Subpath("/data/source"))
+    .ttl(600)
+    .mint(control_key)
+)
 
-@workflow.defn
-class DataPipeline:
-    @workflow.run
-    async def run(self, data_source: str) -> str:
-        warrant = current_warrant()
-        logger.info(f"Pipeline running with tools: {warrant.tools()}")
+# Transform warrant: write-only
+transform_warrant = (
+    Warrant.mint_builder()
+    .holder(transform_key.public_key)
+    .capability("write_file", path=Subpath("/data/output"), content=Pattern("*"))
+    .ttl(600)
+    .mint(control_key)
+)
 
-        # Stage 1: Extract (read_file capability)
-        raw_data = await tenuo_execute_activity(
-            read_file,
-            args=[data_source],
-            start_to_close_timeout=timedelta(seconds=60),
-        )
+# Switch warrant between stages
+client_interceptor.set_headers(tenuo_headers(ingest_warrant, "ingest", ingest_key))
+data = await client.execute_workflow(IngestWorkflow.run, ...)
 
-        # Stage 2: Transform (spawn child with compute capability)
-        transformed = await workflow.execute_child_workflow(
-            TransformWorkflow.run,
-            args=[raw_data],
-            headers=attenuated_headers(
-                tools=["transform_data"],
-                ttl_seconds=300,
-            ),
-        )
-
-        # Stage 3: Load (write_file capability)
-        output_path = "/data/output/result.json"
-        await tenuo_execute_activity(
-            write_file,
-            args=[output_path, transformed],
-            start_to_close_timeout=timedelta(seconds=60),
-        )
-
-        return f"Pipeline complete: {output_path}"
+client_interceptor.set_headers(tenuo_headers(transform_warrant, "transform", transform_key))
+await client.execute_workflow(TransformWorkflow.run, ...)
 ```
 
 ---
@@ -479,4 +499,4 @@ Temporal integration is designed for workflows that may run for hours or days, w
 - [Temporal Documentation](https://docs.temporal.io)
 - [Tenuo Core Concepts](./concepts.md)
 - [Security Model](./security.md)
-- [Example Code](https://github.com/tenuo-ai/tenuo/tree/feat/temporal-integration/tenuo-python/examples/temporal)
+- [Example Code](https://github.com/tenuo-ai/tenuo/tree/main/tenuo-python/examples/temporal)

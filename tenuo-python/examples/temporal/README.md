@@ -1,27 +1,14 @@
-# Tenuo Temporal Integration Example
+# Tenuo Temporal Integration Examples
 
-This example demonstrates how to use Tenuo's warrant-based authorization with Temporal workflows.
-
-## Overview
-
-Temporal is a durable workflow orchestration platform. This integration brings Tenuo's capability-based authorization to Temporal workflows and activities, ensuring that:
-
-- Activities are authorized against warrant constraints
-- Proof-of-Possession (PoP) is verified for every activity execution
-- Warrants propagate through workflow headers automatically
-- Authorization checks are replay-safe using Temporal's scheduled_time
+Warrant-based authorization for Temporal workflows and activities.
 
 ## Prerequisites
 
-1. **Temporal Server**: You need a running Temporal server
+1. **Temporal Server**
 
 ```bash
-# Install Temporal CLI
-brew install temporal  # macOS
-# or download from https://docs.temporal.io/cli
-
-# Start development server
-temporal server start-dev
+brew install temporal            # macOS
+temporal server start-dev        # Start dev server
 ```
 
 2. **Python Dependencies**
@@ -30,150 +17,132 @@ temporal server start-dev
 pip install "tenuo[temporal]"
 ```
 
-## Running the Demo
+## Examples
+
+| Example | Pattern | What it demonstrates |
+|---------|---------|---------------------|
+| [`authorized_workflow_demo.py`](authorized_workflow_demo.py) | **AuthorizedWorkflow** (recommended) | Base class with `self.execute_authorized_activity()`, parallel reads via `asyncio.gather`, fail-fast header validation |
+| [`demo.py`](demo.py) | `tenuo_execute_activity()` | Lower-level API, sequential + parallel reads, unauthorized access denial |
+| [`multi_warrant.py`](multi_warrant.py) | Multi-tenant isolation | Concurrent workflows with distinct warrants scoped to separate directories |
+| [`delegation.py`](delegation.py) | Warrant delegation | Per-stage pipeline authorization with attenuated warrants |
+
+### Quick start
 
 ```bash
-# Make sure Temporal server is running
-temporal server start-dev
-
-# In another terminal, run the demo
-python demo.py
+temporal server start-dev        # Terminal 1
+python authorized_workflow_demo.py  # Terminal 2
 ```
 
-## What the Demo Shows
+## Two workflow patterns
 
-The demo creates a workflow that:
+### AuthorizedWorkflow (recommended)
 
-1. **Issues a Warrant**: Control plane issues a warrant with constraints
-   - `read_file`: Limited to `/tmp/tenuo-demo` directory (Subpath constraint)
-   - `list_directory`: Same constraint
-   - TTL: 1 hour
-
-2. **Worker with Interceptor**: Worker is configured with TenuoInterceptor
-   - All activity executions are automatically authorized
-   - PoP verification is mandatory
-   - Fail-closed: missing warrants block execution
-
-3. **Workflow Execution**: Workflow lists and reads files
-   - Activities execute only if authorized
-   - Attempts to access files outside allowed paths are blocked
-
-4. **Demonstrates Denial**: Shows constraint enforcement
-   - Attempting to access `/etc` directory is blocked
-   - Authorization errors are raised
-
-## Key Components
-
-### Interceptor Configuration
+Subclass `AuthorizedWorkflow` for automatic header validation and PoP:
 
 ```python
+@workflow.defn
+class MyWorkflow(AuthorizedWorkflow):
+    @workflow.run
+    async def run(self, path: str) -> str:
+        return await self.execute_authorized_activity(
+            read_file, args=[path],
+            start_to_close_timeout=timedelta(seconds=30),
+        )
+```
+
+`AuthorizedWorkflow` validates Tenuo headers at workflow start — if they're missing, the workflow fails immediately instead of mid-execution.
+
+### tenuo_execute_activity (advanced)
+
+Use the free function when you need multi-warrant or delegation patterns:
+
+```python
+@workflow.defn
+class PipelineWorkflow:
+    @workflow.run
+    async def run(self, path: str) -> str:
+        return await tenuo_execute_activity(
+            read_file, args=[path],
+            start_to_close_timeout=timedelta(seconds=30),
+        )
+```
+
+## Worker setup (required)
+
+Tenuo's core is a PyO3 native module that must bypass Temporal's workflow sandbox:
+
+```python
+from temporalio.worker.workflow_sandbox import (
+    SandboxedWorkflowRunner, SandboxRestrictions,
+)
+
 interceptor = TenuoInterceptor(
     TenuoInterceptorConfig(
-        key_resolver=EnvKeyResolver(),  # Resolves signing keys
-        on_denial="raise",              # Fail-closed behavior
-        audit_callback=on_audit,        # Optional audit logging
+        key_resolver=EnvKeyResolver(),
+        on_denial="raise",
+        trusted_roots=[control_key.public_key],
+        audit_callback=on_audit,
     )
 )
-```
 
-### Warrant Headers
-
-```python
-# Start workflow with warrant
-result = await client.execute_workflow(
-    MyWorkflow.run,
-    args=[...],
-    headers=tenuo_headers(warrant, "key-id", signing_key),
+worker = Worker(
+    client,
+    task_queue="my-queue",
+    workflows=[MyWorkflow],
+    activities=[read_file],
+    interceptors=[interceptor],
+    workflow_runner=SandboxedWorkflowRunner(
+        restrictions=SandboxRestrictions.default.with_passthrough_modules(
+            "tenuo", "tenuo_core",  # Required for PoP
+        )
+    ),
 )
-```
-
-### Activity Protection
-
-Activities require no code changes. Authorization is enforced by the interceptor:
-
-```python
-@activity.defn
-async def read_file(path: str) -> str:
-    """Automatically protected by Tenuo."""
-    return Path(path).read_text()
 ```
 
 ## Architecture
 
 ```
-Control Plane          Worker                  Activity
-    |                    |                        |
-    |-- Issue Warrant -->|                        |
-    |                    |-- Start Workflow ----->|
-    |                    |                        |
-    |                    |<- Interceptor ---------|
-    |                    |   (Check warrant)      |
-    |                    |   (Verify PoP)         |
-    |                    |   (Check constraints)  |
-    |                    |                        |
-    |                    |-- Execute if allowed ->|
+Client                 Worker                  Activity
+  |                      |                        |
+  |-- set_headers() ---->|                        |
+  |-- execute_workflow ->|                        |
+  |                      |-- schedule activity -->|
+  |                      |                        |
+  |                      |<-- Interceptor --------|
+  |                      |    Check warrant       |
+  |                      |    Verify PoP          |
+  |                      |    Check constraints   |
+  |                      |                        |
+  |                      |--- Execute if OK ----->|
 ```
 
-## Production Considerations
+## Security defaults
 
-### Key Management
+All security features are fail-closed:
 
-Use VaultKeyResolver in production:
-
-```python
-from tenuo.temporal import VaultKeyResolver
-
-resolver = VaultKeyResolver(
-    url="https://vault.company.com:8200",
-    path_template="tenuo/keys/{key_id}",
-    cache_ttl=300,
-)
-```
-
-### Observability
-
-Enable metrics and audit logging:
-
-```python
-from tenuo.temporal import TenuoMetrics
-
-metrics = TenuoMetrics()
-config = TenuoInterceptorConfig(
-    key_resolver=resolver,
-    audit_callback=on_audit,
-    metrics=metrics,  # Prometheus metrics
-)
-```
-
-### Security Defaults
-
-All security features are fail-closed by default:
-- `require_warrant=True`: Activities without warrants are denied
-- `block_local_activities=True`: Prevents bypass via local activities
-- `redact_args_in_logs=True`: Prevents secret leaks in logs
-- PoP verification is mandatory (no opt-out)
+- `require_warrant=True` — activities without warrants are denied
+- `block_local_activities=True` — prevents bypass via local activities
+- `redact_args_in_logs=True` — prevents secret leaks in logs
+- PoP verification is mandatory when `trusted_roots` is set
 
 ## Testing
 
-Run the integration tests:
-
 ```bash
 cd tenuo-python
-pytest tests/test_temporal.py -v
-pytest tests/test_temporal_integration.py -v
+pytest tests/test_temporal_e2e.py -v    # 31 integration tests
 ```
 
-Tests verify:
-- Configuration defaults
-- Decorator behavior (@tool, @unprotected)
-- Exception error codes
-- Audit event structure
-- Chain depth validation
-- Warrant expiration
+## Troubleshooting
+
+| Error | Cause | Fix |
+|-------|-------|-----|
+| `ImportError: PyO3 modules ... initialized once` | Missing passthrough modules | Add `with_passthrough_modules("tenuo", "tenuo_core")` to sandbox config |
+| `TenuoContextError: No Tenuo headers in store` | Workflow started without headers | Call `client_interceptor.set_headers(tenuo_headers(...))` before `execute_workflow` |
+| `ConstraintViolation: No warrant provided` | Headers not reaching worker | Ensure `TenuoClientInterceptor` is in the client's interceptor list |
+| `Incorrect padding` / `signature must be 64 bytes` | Direct `workflow.execute_activity()` call | Use `tenuo_execute_activity()` or `self.execute_authorized_activity()` instead |
 
 ## Learn More
 
 - [Temporal Documentation](https://docs.temporal.io)
 - [Tenuo Temporal Integration Docs](https://tenuo.ai/temporal)
 - [Tenuo Core Concepts](https://tenuo.ai/concepts)
-- [Security Model](https://tenuo.ai/security)
