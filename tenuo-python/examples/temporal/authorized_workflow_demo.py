@@ -1,5 +1,5 @@
 """
-AuthorizedWorkflow Demo — The "easy mode" for Tenuo + Temporal
+AuthorizedWorkflow Demo - The "easy mode" for Tenuo + Temporal
 
 Shows how to use AuthorizedWorkflow as a base class instead of calling
 tenuo_execute_activity() manually.  AuthorizedWorkflow gives you:
@@ -10,7 +10,7 @@ tenuo_execute_activity() manually.  AuthorizedWorkflow gives you:
   - Works with asyncio.gather for parallel activities.
 
 Compare with demo.py which uses the lower-level tenuo_execute_activity()
-directly — both approaches are correct, but AuthorizedWorkflow is less
+directly - both approaches are correct, but AuthorizedWorkflow is less
 boilerplate for the common case.
 
 Requirements:
@@ -25,12 +25,14 @@ import asyncio
 import base64
 import logging
 import os
+import sys
 import uuid
+import warnings
 from datetime import timedelta
 from pathlib import Path
 
 from temporalio import activity, workflow
-from temporalio.client import Client
+from temporalio.client import Client, WorkflowFailureError
 from temporalio.common import RetryPolicy
 from temporalio.worker import Worker
 from temporalio.worker.workflow_sandbox import (
@@ -59,10 +61,27 @@ logger = logging.getLogger(__name__)
 logging.getLogger("temporalio.activity").setLevel(logging.ERROR)
 logging.getLogger("temporalio.worker").setLevel(logging.ERROR)
 
+# Suppress "coroutine was never awaited" RuntimeWarning that Temporal's sandbox
+# emits when a denied workflow's coroutine is garbage-collected.  CPython fires
+# this through both the warnings module and sys.unraisablehook depending on the
+# code path, so we suppress at both levels.
+warnings.filterwarnings("ignore", message="coroutine.*was never awaited")
+_orig_unraisablehook = sys.unraisablehook
+
+
+def _quiet_unraisable(hook_args):
+    if hook_args.exc_type is RuntimeWarning:
+        return
+    _orig_unraisablehook(hook_args)
+
+
+sys.unraisablehook = _quiet_unraisable
+
 
 # =============================================================================
-# Activities — plain functions, no Tenuo boilerplate needed
+# Activities - plain functions, no Tenuo boilerplate needed
 # =============================================================================
+
 
 @activity.defn
 async def read_file(path: str) -> str:
@@ -75,8 +94,9 @@ async def list_directory(path: str) -> list[str]:
 
 
 # =============================================================================
-# Workflow — inherits AuthorizedWorkflow for automatic authorization
+# Workflow - inherits AuthorizedWorkflow for automatic authorization
 # =============================================================================
+
 
 @workflow.defn
 class FileAnalysisWorkflow(AuthorizedWorkflow):
@@ -101,7 +121,7 @@ class FileAnalysisWorkflow(AuthorizedWorkflow):
 
         txt_files = [f for f in files if f.endswith(".txt")]
 
-        # Read all text files in parallel — each gets its own PoP
+        # Read all text files in parallel - each gets its own PoP
         contents = await asyncio.gather(*(
             self.execute_authorized_activity(
                 read_file,
@@ -120,9 +140,10 @@ class FileAnalysisWorkflow(AuthorizedWorkflow):
 # Main
 # =============================================================================
 
+
 def on_audit(event: TemporalAuditEvent):
-    tag = "ALLOW" if event.decision == "ALLOW" else "DENY"
-    logger.info(f"  [{tag:5s}] {event.tool} (warrant: {event.warrant_id})")
+    tag = "ALLOW" if event.decision == "ALLOW" else "DENY "
+    logger.info(f"  [{tag}] {event.tool} (warrant: {event.warrant_id})")
 
 
 async def main():
@@ -185,7 +206,7 @@ async def main():
     ):
         logger.info("Worker started\n")
 
-        # ── Authorized workflow (parallel reads) ─────────────────
+        # -- Scenario 1: Authorized workflow (parallel reads) ------
         logger.info("=== AuthorizedWorkflow with parallel reads ===")
         client_interceptor.set_headers(
             tenuo_headers(warrant, "agent1", agent_key)
@@ -198,11 +219,10 @@ async def main():
         )
         logger.info(f"Result: {result}\n")
 
-        # ── Missing headers → fail-fast ──────────────────────────
-        logger.info("=== Missing Tenuo headers → fail-fast ===")
+        # -- Scenario 2: Missing headers -> fail-fast --------------
+        logger.info("=== Missing Tenuo headers -> fail-fast ===")
         client_interceptor.clear_headers()
         try:
-            from temporalio.client import WorkflowFailureError
             await client.execute_workflow(
                 FileAnalysisWorkflow.run,
                 args=[str(demo_dir)],
@@ -212,10 +232,10 @@ async def main():
             )
             logger.error("BUG: should have failed at init")
         except WorkflowFailureError:
-            logger.info("Correctly rejected: AuthorizedWorkflow requires Tenuo headers\n")
+            logger.info("Correctly rejected: workflow requires Tenuo headers\n")
 
-        # ── Out-of-scope path → denied ───────────────────────────
-        logger.info("=== Out-of-scope path → denied ===")
+        # -- Scenario 3: Out-of-scope path -> denied ---------------
+        logger.info("=== Out-of-scope path -> denied ===")
         client_interceptor.set_headers(
             tenuo_headers(warrant, "agent1", agent_key)
         )
@@ -225,10 +245,14 @@ async def main():
                 args=["/etc"],
                 id=f"denied-{uuid.uuid4().hex[:8]}",
                 task_queue=task_queue,
+                execution_timeout=timedelta(seconds=10),
             )
             logger.error("BUG: should have been denied")
-        except WorkflowFailureError as e:
-            logger.info(f"Correctly denied: {e.cause}")
+        except WorkflowFailureError:
+            logger.info("Correctly denied: /etc is outside warrant scope\n")
+
+        # Let Temporal finish workflow-task cleanup before worker shuts down
+        await asyncio.sleep(1)
 
 
 if __name__ == "__main__":
