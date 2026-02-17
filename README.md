@@ -111,7 +111,7 @@ Tenuo implements **Subtractive Delegation**.
 | **Holder binding** | Stolen tokens are useless without the key |
 | **Constraint types** | `Exact`, `Pattern`, `Range`, `OneOf`, `Regex`, `Cidr`, `UrlPattern`, `Subpath`, `UrlSafe`, `Shlex`, `CEL` |
 | **Monotonic attenuation** | Capabilities only shrink, never expand |
-| **Framework integrations** | OpenAI, FastAPI, LangChain, LangGraph, CrewAI, MCP |
+| **Framework integrations** | OpenAI, CrewAI, Temporal, LangChain, LangGraph, FastAPI, MCP |
 
 ---
 
@@ -202,22 +202,44 @@ guard = (GuardBuilder()
 crew = guard.protect(my_crew)  # All agents get enforced constraints
 ```
 
-**Temporal** - Durable workflows with warrant-based activity authorization
+**Temporal** - Durable workflows with warrant-based activity authorization + Proof-of-Possession
 ```python
-from tenuo.temporal import TenuoInterceptor, TenuoInterceptorConfig, EnvKeyResolver
-
-interceptor = TenuoInterceptor(
-    TenuoInterceptorConfig(key_resolver=EnvKeyResolver())
+from tenuo.temporal import (
+    AuthorizedWorkflow, TenuoInterceptor, TenuoInterceptorConfig,
+    TenuoClientInterceptor, EnvKeyResolver, tenuo_headers,
 )
+from temporalio.worker.workflow_sandbox import SandboxedWorkflowRunner, SandboxRestrictions
 
-worker = Worker(
-    client,
-    task_queue="queue",
-    workflows=[MyWorkflow],
-    activities=[read_file, write_file],
-    interceptors=[interceptor],  # Activities automatically authorized
+# Workflow: inherit AuthorizedWorkflow for automatic PoP
+@workflow.defn
+class MyWorkflow(AuthorizedWorkflow):
+    @workflow.run
+    async def run(self, path: str) -> str:
+        return await self.execute_authorized_activity(
+            read_file, args=[path], start_to_close_timeout=timedelta(seconds=30),
+        )
+
+# Client: inject warrant into workflow headers
+client_interceptor = TenuoClientInterceptor()
+client = await Client.connect("localhost:7233", interceptors=[client_interceptor])
+client_interceptor.set_headers(tenuo_headers(warrant, "agent-1", signing_key))
+
+# Worker: authorize activities with full PoP verification
+worker = Worker(client, task_queue="queue",
+    workflows=[MyWorkflow], activities=[read_file],
+    interceptors=[TenuoInterceptor(TenuoInterceptorConfig(
+        key_resolver=EnvKeyResolver(),
+        trusted_roots=[control_key.public_key],
+    ))],
+    workflow_runner=SandboxedWorkflowRunner(
+        restrictions=SandboxRestrictions.default.with_passthrough_modules(
+            "tenuo", "tenuo_core",  # Required for PoP
+        )
+    ),
 )
 ```
+
+**Examples:** [`authorized_workflow_demo.py`](tenuo-python/examples/temporal/authorized_workflow_demo.py) — AuthorizedWorkflow (recommended) | [`demo.py`](tenuo-python/examples/temporal/demo.py) — Lower-level API | [`multi_warrant.py`](tenuo-python/examples/temporal/multi_warrant.py) — Multi-tenant isolation | [`delegation.py`](tenuo-python/examples/temporal/delegation.py) — Pipeline delegation
 
 **FastAPI** - Extracts warrant from headers, verifies PoP offline
 ```python
