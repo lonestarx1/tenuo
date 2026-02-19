@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **`ApprovalPolicy`**: Human-in-the-loop authorization layer — define when tool calls require human confirmation without reissuing warrants
+- **`require_approval()`**: Conditional rules with optional `when` predicates (e.g., `when=lambda args: args["amount"] > 10_000`)
+- **Built-in approval handlers**: `cli_prompt()`, `auto_approve()`, `auto_deny()`, `webhook()` (placeholder)
+- **`ApprovalRequired` / `ApprovalDenied` / `ApprovalTimeout`**: Exception hierarchy for approval outcomes
+- **Builder API**: `.approval_policy()` and `.on_approval()` on all `BaseGuardBuilder` subclasses
+- **Enforcement integration**: `enforce_tool_call()` accepts `approval_policy` and `approval_handler` — checks run after warrant authorization, fail-closed on handler errors
+- **Async handler support**: Approval handlers can be sync or async coroutines
+- **44 tests**: Rules, policy, handlers, exceptions, enforcement integration, async, fail-closed behavior
+
 ## [0.1.0-beta.9] - 2026-02-17
 
 ### Added

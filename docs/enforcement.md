@@ -128,6 +128,49 @@ node = TenuoToolNode(tools, allowed_tools=["delete_file"])
 - If the warrant doesn't include a tool, `allowed_tools` cannot grant it
 - This is a Python-side policy; the Rust core still verifies the warrant
 
+### Human Approval Policies
+
+Warrants define what an agent *can* do. Approval policies define when a human must *confirm* before execution. Policies are a runtime orchestration concern — change them without reissuing warrants.
+
+```python
+from tenuo import ApprovalPolicy, require_approval, cli_prompt
+
+policy = ApprovalPolicy(
+    require_approval("transfer_funds", when=lambda args: args["amount"] > 10_000),
+    require_approval("delete_user"),
+)
+
+client = (GuardBuilder(openai.OpenAI())
+    .with_warrant(warrant, signing_key)
+    .approval_policy(policy)
+    .on_approval(cli_prompt())
+    .build())
+```
+
+**Key behavior**:
+- Approval checks run **after** warrant authorization — if the warrant denies the call, the approval handler is never invoked
+- A buggy handler fails closed (the call is denied with `internal_error`)
+- Handlers can be sync or async coroutines
+- `ApprovalRequired` is raised if a rule triggers but no handler is configured
+- `ApprovalDenied` is raised if the handler rejects the call
+
+**Built-in handlers**:
+
+| Handler | Use case |
+|---------|----------|
+| `cli_prompt()` | Local development — prompts in the terminal |
+| `auto_approve()` | Testing only — approves everything |
+| `auto_deny()` | Dry-run / audit mode — denies everything |
+| `webhook()` | Tenuo Cloud — posts to URL (placeholder) |
+
+**Custom handlers** implement the `ApprovalHandler` protocol — receive an `ApprovalRequest`, return an `ApprovalResponse`:
+
+```python
+def slack_handler(request):
+    # Post to Slack, wait for reaction, return response
+    return ApprovalResponse(approved=True, approver="alice@company.com")
+```
+
 ### Strict Mode
 
 Enable `strict=True` to require constraints on tools marked `require_at_least_one`:
@@ -147,6 +190,7 @@ These policy checks **do not weaken** Tenuo's security model:
 |-------|-------------|-------------|-----------------|
 | Critical tool constraints | Python | Yes (if process compromised) | None - Rust core still enforces warrant |
 | `allowed_tools` filtering | Python | Yes | None - Rust core still enforces warrant |
+| Approval policies | Python | Yes (if process compromised) | None - operational safeguard, not security boundary |
 | Warrant expiration | **Rust core** | No | **Security boundary** |
 | Tool in warrant | **Rust core** | No | **Security boundary** |
 | Constraint satisfaction | **Rust core** | No | **Security boundary** |

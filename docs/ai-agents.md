@@ -215,11 +215,32 @@ Tenuo is powerful, but it is not a silver bullet. Use the **4-Layer Defense Stra
 3.  **Layer 3: Output Monitoring** (DLP and anomaly detection)
 4.  **Layer 4: Human Oversight** (Approval for sensitive ops)
 
+### Layer 4: Human Approval Policies
+
+Tenuo provides `ApprovalPolicy` for Layer 4. Warrants already limit *what* the agent can do. Approval policies add a human gate for *when* confirmation is needed — without reissuing warrants.
+
+```python
+from tenuo import ApprovalPolicy, require_approval, cli_prompt
+
+policy = ApprovalPolicy(
+    require_approval("transfer_funds", when=lambda args: args["amount"] > 10_000),
+    require_approval("delete_user"),
+)
+```
+
+The policy is a runtime concern. You can:
+- Change thresholds without touching warrants
+- Use different handlers per environment (`cli_prompt()` locally, `webhook()` in production)
+- Fail-closed: buggy handlers deny the call, never allow it
+
+See [Enforcement Models - Approval Policies](enforcement.md#human-approval-policies) for full details.
+
 ### Checklist
 - [ ] Use **P-LLM/Q-LLM** separation for complex tasks.
 - [ ] Set **short TTLs** (minutes, not hours).
 - [ ] Make worker warrants **terminal** (prevent further delegation).
 - [ ] Log all **denied** authorization attempts as potential attacks.
+- [ ] Add **approval policies** for high-value operations (transfers, deletions, external API calls).
 
 ---
 

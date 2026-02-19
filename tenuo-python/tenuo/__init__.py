@@ -152,6 +152,20 @@ import tenuo.keys  # noqa: F401 - Adds SigningKey.from_env(), PublicKey.from_env
 
 Warrant.bind = BoundWarrant.bind_warrant
 
+from tenuo.approval import (  # noqa: E402
+    ApprovalPolicy,
+    ApprovalRule,
+    ApprovalRequest,
+    ApprovalResponse,
+    ApprovalRequired,
+    ApprovalDenied,
+    ApprovalTimeout,
+    require_approval,
+    cli_prompt,
+    auto_approve,
+    auto_deny,
+)
+
 # =============================================================================
 # 80% API Exports
 # =============================================================================
@@ -243,6 +257,18 @@ __all__ = [
     # Key management
     "KeyRegistry",
     "Keyring",
+    # Approval policy (human-in-the-loop)
+    "ApprovalPolicy",
+    "ApprovalRule",
+    "ApprovalRequest",
+    "ApprovalResponse",
+    "ApprovalRequired",
+    "ApprovalDenied",
+    "ApprovalTimeout",
+    "require_approval",
+    "cli_prompt",
+    "auto_approve",
+    "auto_deny",
 ]
 
 __version__ = "0.1.0b9"

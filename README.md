@@ -111,6 +111,7 @@ Tenuo implements **Subtractive Delegation**.
 | **Holder binding** | Stolen tokens are useless without the key |
 | **Constraint types** | `Exact`, `Pattern`, `Range`, `OneOf`, `Regex`, `Cidr`, `UrlPattern`, `Subpath`, `UrlSafe`, `Shlex`, `CEL` |
 | **Monotonic attenuation** | Capabilities only shrink, never expand |
+| **Human approval policies** | Conditional human-in-the-loop gating without reissuing warrants |
 | **Framework integrations** | OpenAI, CrewAI, Temporal, LangChain, LangGraph, FastAPI, MCP |
 
 ---
@@ -280,6 +281,31 @@ See [Helm chart README](./charts/tenuo-authorizer) and [Kubernetes guide](https:
 
 ---
 
+## Human Approval Policies
+
+Warrants define what an agent *can* do. Approval policies define when a human must confirm. Policies are a runtime concern — change them without reissuing warrants.
+
+```python
+from tenuo import ApprovalPolicy, require_approval, cli_prompt
+
+policy = ApprovalPolicy(
+    require_approval("transfer_funds", when=lambda args: args["amount"] > 10_000),
+    require_approval("delete_user"),
+)
+
+client = (GuardBuilder(openai.OpenAI())
+    .with_warrant(warrant, signing_key)
+    .approval_policy(policy)
+    .on_approval(cli_prompt())    # or: auto_approve(), webhook(), custom handler
+    .build())
+```
+
+When `transfer_funds` is called with `amount > 10_000`, the handler prompts for confirmation before execution. Below the threshold, it passes through. If the warrant itself denies the call (wrong tool, expired, constraint violation), the approval policy is never checked.
+
+Built-in handlers: `cli_prompt()`, `auto_approve()` (testing), `auto_deny()` (dry-run), `webhook()` (Tenuo Cloud).
+
+---
+
 ## Documentation
 
 | Resource | Description |
@@ -326,6 +352,7 @@ See [Related Work](https://tenuo.ai/related-work) for detailed comparison.
 | A2A integration | Implemented (`uv pip install tenuo[a2a]`) |
 | AutoGen integration | Implemented (`uv pip install tenuo[autogen]`) |
 | Google ADK integration | Implemented (`uv pip install tenuo[google_adk]`) |
+| Human approval policies | Implemented (`ApprovalPolicy`, `require_approval()`) |
 | Multi-sig approvals | Partial (notary in v0.2) |
 | TypeScript/Node SDK | Planned for v0.2 |
 | Context-aware constraints | Spec under development |

@@ -37,10 +37,17 @@ All cryptographic and security-critical checks are performed by the Rust core.
 Python-side checks are for UX/policy only and can be bypassed if needed.
 """
 
-from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Callable, Set
+from __future__ import annotations
+
+import asyncio
+import inspect
 import logging
 import re
+from dataclasses import dataclass
+from typing import Any, Callable, Dict, List, Optional, Set, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .approval import ApprovalHandler, ApprovalPolicy
 
 from .bound_warrant import BoundWarrant
 from .validation import ValidationResult
@@ -301,6 +308,62 @@ def _get_allowed_tools(bound_warrant: BoundWarrant) -> Optional[List[str]]:
 
 
 # =============================================================================
+# Approval Policy Enforcement
+# =============================================================================
+
+
+def _check_approval(
+    tool_name: str,
+    tool_args: Dict[str, Any],
+    warrant_id: Optional[str],
+    policy: ApprovalPolicy,
+    handler: Optional[ApprovalHandler],
+) -> Optional[EnforcementResult]:
+    """Run the approval policy check and invoke the handler if needed.
+
+    Returns None to proceed (no rule matched or handler approved).
+    Returns an EnforcementResult to deny (handler denied or missing).
+    Raises ApprovalRequired if no handler is configured.
+    """
+    from .approval import ApprovalRequired, ApprovalDenied
+
+    request = policy.check(tool_name, tool_args, warrant_id)
+    if request is None:
+        return None
+
+    if handler is None:
+        raise ApprovalRequired(request)
+
+    result = handler(request)
+
+    if inspect.isawaitable(result):
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop and loop.is_running():
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                result = pool.submit(asyncio.run, result).result()
+        else:
+            result = asyncio.run(result)
+
+    if result.approved:
+        logger.info(
+            f"Approval granted for '{tool_name}' by {result.approver or 'unknown'}",
+            extra={"tool": tool_name, "warrant_id": warrant_id},
+        )
+        return None
+
+    logger.warning(
+        f"Approval denied for '{tool_name}': {result.reason}",
+        extra={"tool": tool_name, "warrant_id": warrant_id},
+    )
+    raise ApprovalDenied(request, result)
+
+
+# =============================================================================
 # Main Enforcement Function
 # =============================================================================
 
@@ -320,6 +383,8 @@ def enforce_tool_call(
     require_constraints: bool = False,
     verify_mode: Literal["sign", "verify"] = "sign",
     precomputed_signature: Optional[bytes] = None,
+    approval_policy: Optional[ApprovalPolicy] = None,
+    approval_handler: Optional[ApprovalHandler] = None,
 ) -> EnforcementResult:
     """
     Core enforcement logic for tool authorization.
@@ -347,18 +412,29 @@ def enforce_tool_call(
             or "verify" to validate a pre-computed signature (Remote PEP/FastAPI).
         precomputed_signature: Required if verify_mode="verify". The PoP signature
             provided by the client.
+        approval_policy: Optional ApprovalPolicy to check after warrant authorization.
+            If a rule matches, the approval_handler is invoked.
+        approval_handler: Callable that handles approval requests (e.g., cli_prompt).
+            Required if approval_policy is set and a rule matches.
 
     Returns:
         EnforcementResult with allowed status and denial details.
+        If approval was required, approval_required=True on the result.
 
     Raises:
         ConfigurationError: If bound_warrant is not a BoundWarrant instance.
+        ApprovalRequired: If approval_policy triggers but no handler is provided.
+        ApprovalDenied: If the handler denies the request.
 
     Example:
         from tenuo import Warrant, SigningKey
         from tenuo._enforcement import enforce_tool_call
 
-        warrant, key = Warrant.quick_mint(tools=["search"], ttl=3600)
+        key = SigningKey.generate()
+        warrant = Warrant.issue(
+            key, capabilities={"search": {}}, ttl_seconds=3600,
+            holder=key.public_key,
+        )
         bound = warrant.bind(key)
 
         result = enforce_tool_call(
@@ -532,9 +608,22 @@ def enforce_tool_call(
             extra={
                 "tool": tool_name,
                 "warrant_id": bound_warrant.id,
-                "args_keys": list(tool_args.keys()),  # Log keys only, not values (PII)
+                "args_keys": list(tool_args.keys()),
             }
         )
+
+        # =================================================================
+        # APPROVAL POLICY CHECK (after warrant authorization)
+        # The warrant permits this call. The approval policy may still
+        # require a human to confirm before execution proceeds.
+        # =================================================================
+        if approval_policy is not None:
+            approval_result = _check_approval(
+                tool_name, tool_args, warrant_id,
+                approval_policy, approval_handler,
+            )
+            if approval_result is not None:
+                return approval_result
 
         return EnforcementResult(
             allowed=True,
@@ -578,6 +667,11 @@ def enforce_tool_call(
             warrant_id=warrant_id,
         )
     except Exception as e:
+        # Let approval exceptions propagate — they are not authorization failures
+        from .approval import ApprovalRequired, ApprovalDenied
+        if isinstance(e, (ApprovalRequired, ApprovalDenied)):
+            raise
+
         # Catch-all for unexpected runtime errors (fail closed)
         logger.exception(f"Unexpected error during authorization for {tool_name}")
         return EnforcementResult(
