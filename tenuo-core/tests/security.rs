@@ -512,7 +512,11 @@ fn test_three_of_five_exact_threshold() {
     let sig = warrant.sign(&root, "deploy", &args).unwrap();
     let result = authorizer.authorize(&warrant, "deploy", &args, Some(&sig), &[a0, a1, a2]);
 
-    assert!(result.is_ok(), "3-of-5 with 3 valid should succeed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "3-of-5 with 3 valid should succeed: {:?}",
+        result.err()
+    );
 }
 
 /// 3-of-5: all 5 approve → succeeds (early exit after 3).
@@ -535,7 +539,11 @@ fn test_three_of_five_all_approve() {
     let sig = warrant.sign(&root, "deploy", &args).unwrap();
     let result = authorizer.authorize(&warrant, "deploy", &args, Some(&sig), &all);
 
-    assert!(result.is_ok(), "3-of-5 with all 5 should succeed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "3-of-5 with all 5 should succeed: {:?}",
+        result.err()
+    );
 }
 
 /// 3-of-5: only 2 valid → fails with InsufficientApprovals.
@@ -796,8 +804,13 @@ fn test_m_of_n_duplicate_counted_once() {
 
     let args = HashMap::new();
     let sig = warrant.sign(&root, "op", &args).unwrap();
-    let result =
-        authorizer.authorize(&warrant, "op", &args, Some(&sig), &[approval_1a, approval_1b]);
+    let result = authorizer.authorize(
+        &warrant,
+        "op",
+        &args,
+        Some(&sig),
+        &[approval_1a, approval_1b],
+    );
 
     assert!(
         result.is_err(),

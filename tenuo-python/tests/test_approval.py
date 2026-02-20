@@ -1009,7 +1009,6 @@ class TestTTLPropagation:
         )
         handler = auto_approve(approver_key=approver_key)
 
-        before = int(time.time())
         result = enforce_tool_call(
             "deploy", {}, bound,
             approval_policy=policy,
@@ -1074,7 +1073,6 @@ class TestWebhook:
 class TestAutoApproveWarning:
 
     def test_auto_approve_emits_production_warning(self, approver_key, bound_warrant):
-        import logging
         handler = auto_approve(approver_key=approver_key)
         policy = ApprovalPolicy(
             require_approval("search"),

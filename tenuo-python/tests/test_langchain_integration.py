@@ -314,7 +314,7 @@ class TestLangChainApproval:
     def test_tenuo_tool_with_bound_warrant_and_approval(self):
         """TenuoTool uses enforce_tool_call with approval when given BoundWarrant."""
         from tenuo.approval import (
-            ApprovalPolicy, ApprovalRequired, require_approval, auto_approve,
+            ApprovalPolicy, ApprovalRequired, require_approval,
         )
         from tenuo.langchain import guard
 

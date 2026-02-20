@@ -27,7 +27,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import sys
 
 from tenuo import Range, SigningKey, Warrant
 from tenuo.approval import (
@@ -43,7 +42,7 @@ from tenuo.approval import (
 )
 from tenuo.autogen import GuardBuilder
 from tenuo._enforcement import enforce_tool_call
-from tenuo_core import py_compute_request_hash as compute_request_hash
+from tenuo import compute_request_hash
 
 
 def demo_single_approver(agent_key, warrant, interactive=False):
@@ -126,8 +125,8 @@ def demo_single_approver(agent_key, warrant, interactive=False):
     )
     try:
         no_handler_guard._authorize("delete_user", {})
-    except ApprovalRequired as e:
-        print(f"  -> ApprovalRequired raised (expected)")
+    except ApprovalRequired:
+        print("  -> ApprovalRequired raised (expected)")
 
 
 def demo_multisig(agent_key, warrant):
@@ -211,16 +210,15 @@ def main():
 
     agent_key = SigningKey.generate()
 
-    warrant = Warrant.issue(
-        agent_key,
-        capabilities={
-            "search": {},
-            "transfer_funds": {"amount": Range(0, 100_000)},
-            "delete_user": {},
-            "deploy_prod": {},
-        },
-        ttl_seconds=3600,
-        holder=agent_key.public_key,
+    warrant = (
+        Warrant.mint_builder()
+        .holder(agent_key.public_key)
+        .capability("search")
+        .capability("transfer_funds", amount=Range(0, 100_000))
+        .capability("delete_user")
+        .capability("deploy_prod")
+        .ttl(3600)
+        .mint()
     )
 
     demo_single_approver(agent_key, warrant, interactive=args.interactive)

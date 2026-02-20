@@ -21,7 +21,7 @@ Pattern demonstrated:
 from typing import List, Dict, Any, Optional
 from tenuo import SigningKey, PublicKey, SignedApproval, Warrant
 from tenuo.approval import ApprovalRequest, sign_approval
-from tenuo_core import py_compute_request_hash as compute_request_hash
+from tenuo import compute_request_hash
 import display
 from rich.prompt import Confirm
 

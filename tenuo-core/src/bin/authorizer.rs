@@ -967,15 +967,13 @@ async fn handle_request(
     // Phase 3: Authorization (constraint matching, PoP verification, approval verification)
     let authorize_start = std::time::Instant::now();
     let result = match verify_result {
-        Ok(_) => {
-            authorizer.authorize(
-                leaf_warrant,
-                &extraction_result.tool,
-                &extraction_result.constraints,
-                pop_signature.as_ref(),
-                &approvals,
-            )
-        }
+        Ok(_) => authorizer.authorize(
+            leaf_warrant,
+            &extraction_result.tool,
+            &extraction_result.constraints,
+            pop_signature.as_ref(),
+            &approvals,
+        ),
         Err(e) => Err(e),
     };
     let authorize_us = authorize_start.elapsed().as_micros() as u64;
@@ -1104,7 +1102,10 @@ async fn handle_request(
 
             // Enrich approval errors with actionable data so the client
             // (or a K8s controller) can obtain the required signatures.
-            if let tenuo::Error::InsufficientApprovals { required, received, .. } = &e {
+            if let tenuo::Error::InsufficientApprovals {
+                required, received, ..
+            } = &e
+            {
                 let request_hash = tenuo::approval::compute_request_hash(
                     &warrant_id,
                     &extraction_result.tool,

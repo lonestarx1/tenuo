@@ -1215,7 +1215,6 @@ class TestLangGraphApproval:
         from tenuo.langgraph import TenuoMiddleware
         from tenuo.approval import ApprovalPolicy, require_approval, auto_approve
 
-        agent_key = SigningKey.generate()
         approver_key = SigningKey.generate()
 
         policy = ApprovalPolicy(
