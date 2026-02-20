@@ -208,6 +208,7 @@ def main():
     )
     args = parser.parse_args()
 
+    issuer_key = SigningKey.generate()
     agent_key = SigningKey.generate()
 
     warrant = (
@@ -218,7 +219,7 @@ def main():
         .capability("delete_user")
         .capability("deploy_prod")
         .ttl(3600)
-        .mint()
+        .mint(issuer_key)
     )
 
     demo_single_approver(agent_key, warrant, interactive=args.interactive)
