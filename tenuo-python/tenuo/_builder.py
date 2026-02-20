@@ -8,13 +8,18 @@ The goal is DRY: common patterns like allow(), with_warrant(), on_denial()
 are implemented once and inherited by all integration-specific builders.
 """
 
-from dataclasses import dataclass
-from typing import Any, Dict, Optional, TypeVar, Generic
+from __future__ import annotations
+
 import logging
+from dataclasses import dataclass
+from typing import Any, Dict, Optional, TypeVar, Generic, TYPE_CHECKING
 
 from .bound_warrant import BoundWarrant
 from .exceptions import ConfigurationError, ExpiredError, MissingSigningKey
 from ._enforcement import DenialPolicy
+
+if TYPE_CHECKING:
+    from .approval import ApprovalHandler, ApprovalPolicy
 
 logger = logging.getLogger("tenuo.builder")
 
@@ -147,6 +152,8 @@ class BaseGuardBuilder(Generic[T]):
         self._warrant: Optional[Any] = None
         self._signing_key: Optional[Any] = None
         self._on_denial: str = DenialPolicy.RAISE
+        self._approval_policy: Optional[ApprovalPolicy] = None
+        self._approval_handler: Optional[ApprovalHandler] = None
 
     def allow(self: T, tool_name: str, **constraints: Any) -> T:
         """
@@ -206,6 +213,48 @@ class BaseGuardBuilder(Generic[T]):
         if mode not in valid_modes:
             raise ValueError(f"on_denial must be one of: {', '.join(valid_modes)}")
         self._on_denial = mode
+        return self
+
+    def approval_policy(self: T, policy: ApprovalPolicy) -> T:
+        """Set an approval policy for human-in-the-loop authorization.
+
+        When a tool call matches a policy rule, the approval handler is
+        invoked before execution proceeds. The warrant still governs what
+        is permitted; the policy governs when a human must confirm.
+
+        Args:
+            policy: ApprovalPolicy with one or more rules.
+
+        Returns:
+            self for method chaining
+
+        Example:
+            from tenuo.approval import ApprovalPolicy, require_approval
+
+            builder.approval_policy(ApprovalPolicy(
+                require_approval("transfer_funds", when=lambda a: a["amount"] > 10_000),
+            ))
+        """
+        self._approval_policy = policy
+        return self
+
+    def on_approval(self: T, handler: ApprovalHandler) -> T:
+        """Set the handler invoked when a tool call requires approval.
+
+        Args:
+            handler: Callable that receives an ApprovalRequest and returns
+                a SignedApproval (or raises ApprovalDenied). Built-in
+                handlers: cli_prompt(), auto_approve(), auto_deny().
+
+        Returns:
+            self for method chaining
+
+        Example:
+            from tenuo.approval import cli_prompt
+            approver_key = SigningKey.generate()
+            builder.on_approval(cli_prompt(approver_key=approver_key))
+        """
+        self._approval_handler = handler
         return self
 
     def _get_bound_warrant(

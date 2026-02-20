@@ -215,6 +215,10 @@ Tenuo is powerful, but it is not a silver bullet. Use the **4-Layer Defense Stra
 3.  **Layer 3: Output Monitoring** (DLP and anomaly detection)
 4.  **Layer 4: Human Oversight** (Approval for sensitive ops)
 
+### Layer 4: Human Oversight
+
+Human approval for sensitive operations is coming soon via Tenuo Cloud. The cryptographic foundation (Ed25519 signed approvals bound to exact call parameters) is built into the Rust core. Stay tuned.
+
 ### Checklist
 - [ ] Use **P-LLM/Q-LLM** separation for complex tasks.
 - [ ] Set **short TTLs** (minutes, not hours).

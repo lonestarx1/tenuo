@@ -326,7 +326,7 @@ See [Related Work](https://tenuo.ai/related-work) for detailed comparison.
 | A2A integration | Implemented (`uv pip install tenuo[a2a]`) |
 | AutoGen integration | Implemented (`uv pip install tenuo[autogen]`) |
 | Google ADK integration | Implemented (`uv pip install tenuo[google_adk]`) |
-| Multi-sig approvals | Partial (notary in v0.2) |
+| Human approval policies | Coming soon (Tenuo Cloud) |
 | TypeScript/Node SDK | Planned for v0.2 |
 | Context-aware constraints | Spec under development |
 | Revocation service | Planned for v0.2 |

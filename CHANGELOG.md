@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Transparent PoP in Temporal**: Outbound workflow interceptor computes Proof-of-Possession automatically for `workflow.execute_activity()` — no wrapper needed
+- **`activity_fns` config**: `TenuoInterceptorConfig` accepts activity functions for parameter name resolution in transparent PoP
+- **`x-tenuo-arg-keys` header**: Ensures outbound/inbound PoP signing consistency
+- **Authorizer API hardening**: `check_chain()` and `authorize_one()` — two independent security boundaries
+- **Mandatory PoP timestamp**: `warrant.sign()` requires explicit `timestamp` argument for replay safety
+- **Wire fidelity tests**: Verify all constraint types survive serialization roundtrip
+
 ## [0.1.0-beta.9] - 2026-02-17
 
 ### Added

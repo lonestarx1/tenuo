@@ -14,8 +14,9 @@ This is NOT just a constraint check - it's a cryptographic proof that:
 """
 
 import functools
+import time
 from typing import Callable, Dict, List, Optional
-from tenuo import Warrant, SigningKey, Approval, Authorizer
+from tenuo import Warrant, SigningKey, SignedApproval, Authorizer
 import display
 
 
@@ -34,7 +35,7 @@ class WarrantExecutor:
         self,
         warrant: Warrant,
         signing_key: SigningKey,
-        approvals: Optional[List[Approval]] = None,
+        approvals: Optional[List[SignedApproval]] = None,
     ):
         """
         Initialize executor with warrant and signing key.
@@ -107,7 +108,7 @@ class WarrantExecutor:
                 return f"BLOCKED: {clean_msg}"
 
             # Step 2: Full authorization with Authorizer (includes multi-sig)
-            pop_signature = self.warrant.sign(self.signing_key, tool_name, kwargs)
+            pop_signature = self.warrant.sign(self.signing_key, tool_name, kwargs, int(time.time()))
             valid_approvals = [a for a in self.approvals if not a.is_expired()]
 
             try:
